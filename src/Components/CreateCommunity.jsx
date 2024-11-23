@@ -58,6 +58,7 @@ const CreateCommunity = ({ onClose }) => {
               <option value="South Africa">South Africa</option>
               <option value="Mexico">Mexico</option>
               <option value="Spain">Spain</option>
+              <option value="Pakistan">Pakistan</option>
               {/* Add additional countries as needed */}
             </select>
           </label>
