@@ -9,7 +9,7 @@ const Footer = () => {
         <div className="w-full md:w-1/3 mb-8 md:mb-0">
           <h3 className="text-2xl font-bold mb-2">VibeTribe</h3>
           <p className="text-sm mb-4 text-gray-300">
-            Elevating Experience & Sales Control of Your Smart Home.
+            Elevating Travel Experiences & Community Connections Worldwide.
           </p>
           <p className="text-xs text-gray-500">© FundInc. 2023 All Rights Reserved.</p>
         </div>
@@ -55,7 +55,7 @@ const Footer = () => {
       {/* Bottom Line */}
       <div className="mt-8 border-t border-gray-700 pt-4">
         <p className="text-center text-sm text-gray-500">
-          Empowering smarter living through cutting-edge solutions.
+        Empowering Global Travel through Community-Driven Solutions.
         </p>
       </div>
     </footer>

@@ -1,7 +1,10 @@
 import React from 'react';
+import Navbar from './Navbar';
 
 const AboutUs = () => {
   return (
+    <>
+    <Navbar/>
     <div className="relative w-full min-h-screen flex justify-center items-center p-4 sm:p-6 lg:p-8 bg-gray-50">
       <div className="text-center max-w-3xl px-4">
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-gray-800 mb-4">
@@ -52,6 +55,7 @@ const AboutUs = () => {
         </div>
       </div>
     </div>
+    </>
   );
 };
 
