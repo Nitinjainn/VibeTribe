@@ -11,6 +11,7 @@ import CreateCommunity from "./Components/CreateCommunity";
 import CommunityCards from "./Components/CommunityCards";
 import InerCard from "./Components/InerCard";
 import AboutUs from "./Components/AboutUs";
+import Favorites from "./Components/Favorites";
 
 
 const App = () => {
@@ -28,6 +29,7 @@ const App = () => {
           <Route path='/CreateCommunity' element = {<CreateCommunity/>}/>
           <Route path='/InerCard' element = {<InerCard/>}/>
           <Route path='/AboutUs' element = {<AboutUs/>}/>
+          <Route path='/Favorites' element = {<Favorites/>}/>
         </Routes>
       </div>
     </Router>
