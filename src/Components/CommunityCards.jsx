@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './Navbar';
-import { FaShareAlt, FaHeart } from 'react-icons/fa';
-import { doc, setDoc } from 'firebase/firestore';
+import { FaShareAlt, FaHeart, FaTimes } from 'react-icons/fa';
+import { collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
+import { useNavigate } from 'react-router-dom';
 
-const CommunityCard = ({ title, description, peopleJoined, imageSrc }) => {
+const CommunityCard = ({ title, description, peopleJoined, imageSrc, onCardClick }) => {
   const handleShare = () => {
-    const shareUrl = window.location.href + title.replace(/\s+/g, '-').toLowerCase(); // Generate a shareable link
+    const shareUrl = window.location.href + title.replace(/\s+/g, '-').toLowerCase();
     navigator.clipboard.writeText(shareUrl);
     alert(`Community link copied: ${shareUrl}`);
   };
@@ -15,7 +16,6 @@ const CommunityCard = ({ title, description, peopleJoined, imageSrc }) => {
     const favoriteData = { title, description, peopleJoined, imageSrc };
 
     try {
-      // Add a new document to the 'favorites' collection with a unique ID
       await setDoc(doc(db, 'favorites', title), favoriteData);
       alert(`${title} has been added to your favorites!`);
     } catch (error) {
@@ -25,17 +25,26 @@ const CommunityCard = ({ title, description, peopleJoined, imageSrc }) => {
   };
 
   return (
-    <div className="bg-teal-100 rounded-lg shadow-lg w-80 max-h-[400px] p-4 relative transition-transform transform hover:scale-105 hover:shadow-2xl">
-      {/* Favorite Button */}
+    <div
+      className="bg-teal-100 rounded-lg shadow-lg w-80 max-h-[400px] p-4 relative transition-transform transform hover:scale-105 hover:shadow-2xl cursor-pointer"
+      onClick={onCardClick}
+    >
       <button
-        onClick={handleFavorite}
-        className="absolute top-2 right-10 bg-teal-600 text-white p-2 rounded-full hover:bg-teal-700 transition-all">
+        onClick={(e) => {
+          e.stopPropagation();
+          handleFavorite();
+        }}
+        className="absolute top-2 right-10 bg-teal-600 text-white p-2 rounded-full hover:bg-teal-700 transition-all"
+      >
         <FaHeart />
       </button>
-      {/* Share Button */}
       <button
-        onClick={handleShare}
-        className="absolute top-2 right-2 bg-teal-600 text-white p-2 rounded-full hover:bg-teal-700 transition-all">
+        onClick={(e) => {
+          e.stopPropagation();
+          handleShare();
+        }}
+        className="absolute top-2 right-2 bg-teal-600 text-white p-2 rounded-full hover:bg-teal-700 transition-all"
+      >
         <FaShareAlt />
       </button>
       <div className="overflow-hidden rounded-lg">
@@ -46,7 +55,7 @@ const CommunityCard = ({ title, description, peopleJoined, imageSrc }) => {
       <div className="flex justify-between items-center mt-6">
         <span className="text-gray-600 text-sm">{peopleJoined} people joined</span>
         <button className="bg-teal-700 text-white py-2 px-5 rounded-md hover:bg-teal-800 transition-all">
-          <a href="/InerCard">Join Community</a>
+          Join Community
         </button>
       </div>
     </div>
@@ -54,41 +63,47 @@ const CommunityCard = ({ title, description, peopleJoined, imageSrc }) => {
 };
 
 const CommunityCards = () => {
-  const [communityData, setCommunityData] = useState([
-    { title: 'Trip to Manali', description: 'Join the community for a trip to the mountains.', peopleJoined: '250+', imageSrc: 'https://www.justahotels.com/wp-content/uploads/2023/07/Manali-Travel-Guide.jpg' },
-    { title: 'Explore Goa', description: 'A community adventure to the beaches of Goa.', peopleJoined: '300+', imageSrc: 'https://wemusttravel.in/wp-content/uploads/2019/06/Goa-sunset-4.jpg' },
-    { title: 'Ladakh Journey', description: 'Experience the stunning landscapes of Ladakh.', peopleJoined: '200+', imageSrc: 'https://www.lehladakhindia.com/wp-content/uploads/2024/07/ladakh-by-road-22.jpeg' },
-    { title: 'Rajasthan Safari', description: 'Discover the royal heritage of Rajasthan.', peopleJoined: '150+', imageSrc: 'https://lh7-us.googleusercontent.com/eGaRpuYaooIGNqSeodNjWK_n_Qjbnl9MLgAt97k7KZPyB2-EYlls1Pv7_24oogSSK2bIVY1mI9DwEUL4ahfWr7KDlqqNVkWI4MmI9T36-XgykdJsDn2abbcJ-aAghn8S1GLSr52HrRmuDNEq-yn8lQA' },
-    { title: 'Backpacking in Kerala', description: 'Join us for an exploration of Kerala’s beauty.', peopleJoined: '180+', imageSrc: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSqCkzs9WIDTAahMcFBCBTuO9fK5N8uYiFoCw&s' },
-    { title: 'HongKong DisneyLand', description: 'Join us for an exploration of HonKong.', peopleJoined: '180+', imageSrc: 'https://www.flamingotravels.co.in/blog/wp-content/uploads/2023/08/Disneyland-Hongkong.png' }
-  ]);
-
+  const [communityData, setCommunityData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredCommunities, setFilteredCommunities] = useState(communityData);
+  const [filteredCommunities, setFilteredCommunities] = useState([]);
+  const [selectedCommunity, setSelectedCommunity] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const filtered = communityData.filter(community =>
-      community.title.toLowerCase().includes(searchQuery.toLowerCase())
+    const unsubscribe = onSnapshot(collection(db, 'communities'), (snapshot) => {
+      const data = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        title: doc.data().communityName || 'Untitled Community',
+        description: doc.data().description || 'No description provided.',
+        peopleJoined: doc.data().peopleCount || '0',
+        imageSrc: doc.data().imageSrc || 'https://via.placeholder.com/400',
+        travelDates: doc.data().travelDates || 'Date not available', // Fetch travel date
+        location: doc.data().location || 'Location not specified', // Fetch travel location
+      }));
+      setCommunityData(data);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const filtered = communityData.filter((community) =>
+      community?.title?.toLowerCase().includes(searchQuery.toLowerCase())
     );
     setFilteredCommunities(filtered);
   }, [searchQuery, communityData]);
 
-  const fetchCommunityImage = async (location) => {
-    const apiKey = '0JaGxSb4iN0oPWKg6N6qqrb1qZr2LGMuQjDhQVKAH9w'; // Replace with your Unsplash API Key
-    try {
-      const response = await fetch(`https://api.unsplash.com/search/photos?query=${location}&client_id=${apiKey}&per_page=1`);
-      const data = await response.json();
-      if (data.results.length > 0) {
-        return data.results[0].urls.small;
-      }
-    } catch (error) {
-      console.error("Error fetching image from Unsplash:", error);
-    }
-    return ''; // Return an empty string if no image is found or an error occurs
-  };
-
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
+  };
+
+  const handleCardClick = (community) => {
+    setSelectedCommunity(community);
+  };
+
+  const closePopup = () => {
+    setSelectedCommunity(null);
   };
 
   return (
@@ -99,7 +114,6 @@ const CommunityCards = () => {
           <h1 className="text-3xl font-extrabold text-gray-800">Search for Communities</h1>
         </div>
 
-        {/* Search Bar */}
         <div className="flex justify-center mb-6">
           <input
             type="text"
@@ -110,25 +124,71 @@ const CommunityCards = () => {
           />
         </div>
 
-        <div className="flex flex-wrap justify-center gap-8 px-10 py-6">
-          {filteredCommunities.map((community, index) => (
-            <CommunityCard
-              key={index}
-              title={community.title}
-              description={community.description}
-              peopleJoined={community.peopleJoined}
-              imageSrc={community.imageSrc || ''} // Fallback in case no image is fetched
-            />
-          ))}
-        </div>
-        
+        {filteredCommunities.length > 0 ? (
+          <div className="flex flex-wrap justify-center gap-8 px-10 py-6">
+            {filteredCommunities.map((community) => (
+              <CommunityCard
+                key={community.id}
+                title={community.title}
+                description={community.description}
+                peopleJoined={community.peopleJoined}
+                imageSrc={community.imageSrc}
+                onCardClick={() => handleCardClick(community)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center text-center py-12">
+            <p className="text-lg text-gray-700 mb-4">
+              There are no communities available. Create one now to get started!
+            </p>
+            <button
+              onClick={() => navigate('/create-community')}
+              className="bg-teal-700 text-white py-2 px-6 rounded-md hover:bg-teal-800 transition-all"
+            >
+              Create Community
+            </button>
+          </div>
+        )}
 
-        {/* See More Button */}
-        <div className="flex justify-center py-6">
-          <button className="bg-teal-700 text-white py-2 px-6 rounded-md hover:bg-teal-800 transition-all">
-            See More
-          </button>
-        </div>
+        {filteredCommunities.length > 0 && (
+          <div className="flex justify-center py-6">
+            <button className="bg-teal-700 text-white py-2 px-6 rounded-md hover:bg-teal-800 transition-all">
+              See More
+            </button>
+          </div>
+        )}
+
+        {selectedCommunity && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+            <div className="relative bg-white shadow-xl rounded-lg p-8 w-full max-w-xl mx-4">
+              <button
+                onClick={closePopup}
+                className="absolute top-2 right-2 text-gray-600 hover:text-gray-800"
+              >
+                <FaTimes size={20} />
+              </button>
+              <div className="text-center">
+                <img
+                  src={selectedCommunity.imageSrc}
+                  alt={selectedCommunity.title}
+                  className="w-full h-64 object-cover rounded-lg mb-4"
+                />
+                <h2 className="text-2xl font-bold text-teal-700">{selectedCommunity.title}</h2>
+                <p className="text-gray-600 text-lg mt-2">{selectedCommunity.description}</p>
+                <p className="text-gray-500 mt-4">
+                  <strong>People Joined:</strong> {selectedCommunity.peopleJoined}
+                </p>
+                <p className="text-gray-500 mt-4">
+                  <strong>Trip Date:</strong> {selectedCommunity.travelDates}
+                </p>
+                <p className="text-gray-500 mt-4">
+                  <strong>Travel Location:</strong> {selectedCommunity.location}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

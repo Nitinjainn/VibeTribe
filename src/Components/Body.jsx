@@ -18,15 +18,15 @@ const Body = () => {
   };
 
   return (
-    <div className={`relative w-full h-screen flex justify-center items-center px-4 py-10 ${isModalOpen ? 'overflow-hidden' : ''}`}>
-      <div
-        className={`relative w-full max-w-screen-xl h-[95vh] mx-auto my-8 text-center bg-cover bg-center bg-no-repeat shadow-2xl rounded-2xl overflow-hidden border border-gray-200 transition-all duration-500 ${isModalOpen ? 'blur-sm' : ''}`}
-        style={{
-          backgroundImage: "url('https://miro.medium.com/v2/resize:fit:1200/1*ggfwCv5wd2xih-2MtP9qcw.jpeg')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      >
+    <div className={`relative w-full h-screen flex justify-center items-center px-4 py-6 ${isModalOpen ? 'overflow-hidden' : ''}`}>
+    <div
+      className={`relative w-full h-full max-w-full mx-auto bg-cover bg-center bg-no-repeat shadow-2xl rounded-xl overflow-hidden border border-gray-300 transition-all duration-500 ${isModalOpen ? 'blur-sm' : ''}`}
+      style={{
+        backgroundImage: "url('https://miro.medium.com/v2/resize:fit:1200/1*ggfwCv5wd2xih-2MtP9qcw.jpeg')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm rounded-2xl"></div>
 
         {/* "Need Money Urgently" Button at the top right */}
