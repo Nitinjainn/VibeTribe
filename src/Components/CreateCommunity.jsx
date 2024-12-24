@@ -12,32 +12,28 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
 
   const fetchImage = async (location) => {
     try {
-      const apiKey = '8yBxWI99J1ki7WuVIp0iR4XlVebR5FQen17f1ZLdtV8e0LksbCxgpI9O'; // Replace with your Pexels API key
-      const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(location)}&per_page=1`;
-  
-      const response = await fetch(url, {
-        headers: {
-          Authorization: apiKey, // Pexels API requires the Authorization header
-        },
-      });
+      const apiKey = '0JaGxSb4iN0oPWKg6N6qqrb1qZr2LGMuQjDhQVKAH9w'; // Replace with your Unsplash API key
+      const url = `https://api.unsplash.com/search/photos?query=${location}&client_id=${apiKey}&per_page=1`;
+      const response = await fetch(url);
   
       if (!response.ok) {
-        console.error('Error fetching from Pexels:', response.statusText);
+        console.error('Error fetching from Unsplash:', response.statusText);
         return null;
       }
   
       const data = await response.json();
-      if (data.photos && data.photos.length > 0) {
-        return data.photos[0].src.medium; // Use the first image's medium size URL
+      if (data.results.length > 0) {
+        return data.results[0].urls.regular; // Use a high-quality image URL
       } else {
         console.warn('No image found for the specified location.');
         return null;
       }
     } catch (error) {
-      console.error('Error fetching image from Pexels:', error);
+      console.error('Error fetching image from Unsplash:', error);
       return null;
     }
   };
+  
   
 
   const handleCreate = async (e) => {
