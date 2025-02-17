@@ -12,7 +12,7 @@ import CommunityCards from "./Components/CommunityCards";
 import InerCard from "./Components/InerCard";
 import AboutUs from "./Components/AboutUs";
 import Favorites from "./Components/Favorites";
-
+import 'font-awesome/css/font-awesome.min.css';
 
 const App = () => {
   return (
