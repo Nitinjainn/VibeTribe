@@ -48,7 +48,7 @@ export default function Navbar() {
   return (
     <>
       {/* This div prevents content from being hidden under navbar */}
-      <div className="h-20"></div>
+      <div className="h-16 sm:h-20"></div>
 
       <Disclosure
         as="nav"
@@ -58,10 +58,10 @@ export default function Navbar() {
             : "bg-[#0F181F] bg-opacity-100"
         }`}
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 ">
-          <div className="relative flex h-20 items-center justify-between drop-shadow-md">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="relative flex h-16 sm:h-20 items-center justify-between drop-shadow-md">
             {/* Logo */}
-            <div className="flex items-center text-white text-3xl font-bold">
+            <div className="flex items-center text-white text-2xl sm:text-3xl font-bold">
               VibeTribe
             </div>
 
@@ -151,7 +151,7 @@ export default function Navbar() {
         </div>
 
         {/* Mobile Menu */}
-        <DisclosurePanel className="sm:hidden bg-white shadow-md rounded-lg p-4 space-y-2">
+        <DisclosurePanel className="sm:hidden bg-white shadow-md rounded-lg p-2 space-y-1">
           {navigation.map((item) => (
             <Link
               key={item.name}

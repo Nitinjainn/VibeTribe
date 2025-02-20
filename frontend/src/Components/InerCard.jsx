@@ -64,7 +64,7 @@ const CommunityChat = () => {
         </div>
       </div>
 
-      {/* Details Section */}
+      {/* Payments section */}
       <div className="w-full md:w-[30vw] p-8 bg-white rounded-3xl shadow-lg mx-4 mt-4 md:mt-0">
         <h2 className="text-2xl font-semibold text-gray-800 mb-4">Trip Details</h2>
         <h5 className="text-xl text-gray-700 mb-2">Trip to Manali</h5>
