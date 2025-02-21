@@ -7,6 +7,7 @@ import Trusted from '../Components/Trusted';
 import FAQSection from '../Components/FaqSection';
 import Footer from '../Components/Footer';
 import ScrollToTop from '../Components/ScrollToTop';
+import TokenBalance from '../hooks/TokenBalance';
 
 
 function Home() {
@@ -21,6 +22,7 @@ function Home() {
         <Trusted/>
         <Footer/>
         <ScrollToTop/>
+        <TokenBalance />
       </>
     );
   }
