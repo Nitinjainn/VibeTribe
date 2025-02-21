@@ -8,15 +8,21 @@ import { useNavigate } from 'react-router-dom';
 const CommunityCard = ({ title, description, peopleJoined, imageSrc, costEstimated, onCardClick }) => {
   const handleShare = () => {
     const shareUrl = window.location.href + title.replace(/\s+/g, '-').toLowerCase();
-    navigator.clipboard.writeText(shareUrl);
-    alert(`Community link copied: ${shareUrl}`);
+    try {
+      navigator.clipboard.writeText(shareUrl);
+      alert(`Community link copied: ${shareUrl}`);
+    } catch (error) {
+      console.error('Clipboard write error:', error);
+      alert('Unable to copy link. Please try manually.');
+    }
   };
 
   const handleFavorite = async () => {
+    const safeTitle = title.replace(/\s+/g, '_'); // Ensure valid Firestore document ID
     const favoriteData = { title, description, peopleJoined, imageSrc, costEstimated };
 
     try {
-      await setDoc(doc(db, 'favorites', title), favoriteData);
+      await setDoc(doc(db, 'favorites', safeTitle), favoriteData);
       alert(`${title} has been added to your favorites!`);
     } catch (error) {
       console.error('Error adding to favorites:', error);
@@ -77,7 +83,7 @@ const CommunityCards = () => {
         ...doc.data(),
         title: doc.data().communityName || 'Untitled Community',
         description: doc.data().description || 'No description provided.',
-        peopleJoined: doc.data().peopleCount || '0',
+        peopleJoined: parseInt(doc.data().peopleCount, 10) || 0, // Ensure number
         imageSrc: doc.data().imageSrc || 'https://via.placeholder.com/400',
         travelDates: doc.data().travelDates || 'Date not available',
         location: doc.data().location || 'Location not specified',
@@ -154,7 +160,7 @@ const CommunityCards = () => {
           </div>
         )}
 
-{selectedCommunity && (
+        {selectedCommunity && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
             <div className="relative bg-white shadow-xl rounded-lg p-8 w-full max-w-xl mx-4">
               <button
@@ -171,16 +177,9 @@ const CommunityCards = () => {
                 />
                 <h2 className="text-2xl font-bold text-teal-700">{selectedCommunity.title}</h2>
                 <p className="text-gray-600 text-lg mt-2"><strong>Desc:</strong> {selectedCommunity.description}</p>
-                <p className="text-gray-500 mt-4">
-                  <strong>Max People Can Join:</strong> {selectedCommunity.peopleJoined}
-                </p>
-                <p className="text-gray-500 mt-4">
-                  <strong>Trip Date:</strong> {selectedCommunity.travelDates}
-                </p>
+                <p className="text-gray-500 mt-4"><strong>Trip Date:</strong> {selectedCommunity.travelDates}</p>
                 <p className="text-gray-500 mt-4"><strong>Estimated Cost:</strong> {selectedCommunity.costEstimated}</p>
-                <p className="text-gray-500 mt-4">
-                  <strong>Travel Location:</strong> {selectedCommunity.location}
-                </p>
+                <p className="text-gray-500 mt-4"><strong>Travel Location:</strong> {selectedCommunity.location}</p>
               </div>
             </div>
           </div>
@@ -191,7 +190,3 @@ const CommunityCards = () => {
 };
 
 export default CommunityCards;
-
-
-
-///
