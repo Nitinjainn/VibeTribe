@@ -15,34 +15,21 @@
     "@fortawesome/free-solid-svg-icons": "^6.6.0",
     "@fortawesome/react-fontawesome": "^0.2.2",
     "@headlessui/react": "^2.2.0",
-<<<<<<< Updated upstream
     "@heroicons/react": "^2.2.0",
-=======
-    "@heroicons/react": "^2.1.5",
     "axios": "^1.7.9",
->>>>>>> Stashed changes
     "dotenv": "^16.4.5",
     "ethers": "^6.13.5",
     "firebase": "^11.0.1",
     "font-awesome": "^4.7.0",
     "js-cookie": "^3.0.5",
-<<<<<<< Updated upstream
     "lucide-react": "^0.475.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-icons": "^5.3.0",
-    "react-router-dom": "^6.29.0",
     "semantic-ui-css": "^2.5.0",
     "semantic-ui-react": "^2.1.5",
     "swiper": "^11.2.4",
-=======
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-icons": "^5.3.0",
     "react-router-dom": "^7.2.0",
-    "semantic-ui-css": "^2.5.0",
-    "semantic-ui-react": "^2.1.5",
->>>>>>> Stashed changes
     "vite-plugin-pwa": "^0.20.5",
     "web3": "^4.15.0"
   },
@@ -58,11 +45,7 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
     "globals": "^15.11.0",
-<<<<<<< Updated upstream
     "postcss": "^8.5.3",
-=======
-    "postcss": "^8.5.2",
->>>>>>> Stashed changes
     "tailwindcss": "^4.0.7",
     "vite": "^5.4.10"
   }
