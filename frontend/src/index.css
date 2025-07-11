@@ -1,0 +1,35 @@
+body {
+    font-family: "Poppins", sans-serif;
+  }  
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+/* Custom Scrollbar for the entire website */
+* {
+    scrollbar-width: thin; /* Works in Firefox */
+    scrollbar-color: #6f6f6f #0F181F; /* Thumb and track color */
+  }
+  
+  /* For Chrome, Edge, Safari */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: #0F181F;
+    border-radius: 10px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: #22c55e;
+    border-radius: 10px;
+    border: 2px solid #0F181F;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: #16a34a;
+  }
+  
