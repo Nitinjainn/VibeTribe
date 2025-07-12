@@ -33,8 +33,8 @@ class MetaMaskAuth {
       this.address = accounts[0];
       
       // Create provider and signer
-      this.provider = new ethers.BrowserProvider(window.ethereum);
-      this.signer = await this.provider.getSigner();
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      this.signer = await provider.getSigner();
 
       return {
         success: true,
@@ -86,7 +86,7 @@ class MetaMaskAuth {
   // Verify signature
   async verifySignature(message, signature, address) {
     try {
-      const recoveredAddress = ethers.verifyMessage(message, signature);
+      const recoveredAddress = ethers.utils.verifyMessage(message, signature);
       return recoveredAddress.toLowerCase() === address.toLowerCase();
     } catch (error) {
       console.error('Error verifying signature:', error);

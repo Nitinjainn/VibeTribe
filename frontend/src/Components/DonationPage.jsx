@@ -527,7 +527,7 @@ const DonationPage = () => {
           </div>
 
           {/* Main Content - Two Divs */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-8">
             {/* Transactions Section */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h2 className="text-xl font-semibold text-gray-800 mb-6">Transactions</h2>
@@ -555,7 +555,7 @@ const DonationPage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Withdraw Amount (BNB)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2 ">Withdraw Amount (BNB)</label>
                   <input
                     type="number"
                     step="0.001"
