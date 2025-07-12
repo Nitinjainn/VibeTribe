@@ -16,8 +16,8 @@ import { debugAuth } from "../utils/debugAuth";
 const navigation = [
   { name: "Home", href: "/", current: true },
   { name: "Treasury", href: "/DonationPage", current: false },
-  { name: "How It Works", href: "/HowItWorks", current: false },
-  { name: "About us", href: "/AboutUs", current: false },
+  { name: "Community", href: "/CommunityCards", current: false },
+  { name: "Docs", href: "/HowItWorks", current: false },
   { name: "Favorites", href: "/Favorites", current: false },
 ];
 
@@ -28,7 +28,15 @@ function classNames(...classes) {
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const navigate = useNavigate();
-  const { user, loading, authMethod, logout, getUserDisplayName, getUserAddress, getUserEmail } = useAuth();
+  const {
+    user,
+    loading,
+    authMethod,
+    logout,
+    getUserDisplayName,
+    getUserAddress,
+    getUserEmail,
+  } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -67,13 +75,21 @@ export default function Navbar() {
 
   // Get user display info
   const getUserDisplayInfo = () => {
-    if (!user) return { name: 'User', method: null };
-    
+    if (!user) return { name: "User", method: null };
+    const method = authMethod;
+    const address = getUserAddress();
+    const email = getUserEmail();
+    let name;
+    if (method === "metamask" && address) {
+      name = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    } else {
+      name = getUserDisplayName();
+    }
     return {
-      name: getUserDisplayName(),
-      method: authMethod,
-      address: getUserAddress(),
-      email: getUserEmail()
+      name,
+      method,
+      address,
+      email,
     };
   };
 
@@ -124,7 +140,11 @@ export default function Navbar() {
                     <button className="relative rounded-full bg-gray-800 p-1.5 text-gray-400 hover:bg-gray-700 transition">
                       <i
                         className="fa-solid fa-bell"
-                        style={{ fontSize: "20px", color: "#fff", padding: "2px" }}
+                        style={{
+                          fontSize: "20px",
+                          color: "#fff",
+                          padding: "2px",
+                        }}
                       ></i>
                     </button>
 
@@ -132,18 +152,31 @@ export default function Navbar() {
                       <MenuButton className="flex items-center bg-gray-800 rounded-full p-1.5 hover:bg-gray-700 transition">
                         <i
                           className="fa-solid fa-user"
-                          style={{ fontSize: "20px", color: "#fff", padding: "2px" }}
+                          style={{
+                            fontSize: "20px",
+                            color: "#fff",
+                            padding: "2px",
+                          }}
                         ></i>
                       </MenuButton>
                       <MenuItems className="absolute right-0 mt-2 w-64 origin-top-right bg-[#0F181F]/95 backdrop-blur-lg border border-gray-700 shadow-lg rounded-xl py-2 z-[100]">
                         {/* User Info */}
                         <div className="px-4 py-2 border-b border-gray-700">
-                          <div className="text-sm text-gray-300 font-medium">{userInfo.name}</div>
+                          <div
+                            className="text-sm text-gray-300 font-medium truncate max-w-[220px]"
+                            title={userInfo.name}
+                          >
+                            {userInfo.name}
+                          </div>
                           <div className="text-xs text-gray-500">
-                            {userInfo.method === 'metamask' ? (
+                            {userInfo.method === "metamask" ? (
                               <span className="flex items-center">
-                                <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="#f6851b">
-                                  <path d="M21.49 4.27c-.32-.73-.84-1.35-1.49-1.8L12.5.5c-.73-.32-1.54-.32-2.27 0L3.5 2.47c-.65.45-1.17 1.07-1.49 1.8L.5 6.5c-.32.73-.32 1.54 0 2.27l1.51 2.23c.32.73.84 1.35 1.49 1.8l6.73 3.97c.73.32 1.54.32 2.27 0l6.73-3.97c.65-.45 1.17-1.07 1.49-1.8L23.5 6.5c.32-.73.32-1.54 0-2.27l-1.51-2.23z"/>
+                                <svg
+                                  className="w-3 h-3 mr-1"
+                                  viewBox="0 0 24 24"
+                                  fill="#f6851b"
+                                >
+                                  <path d="M21.49 4.27c-.32-.73-.84-1.35-1.49-1.8L12.5.5c-.73-.32-1.54-.32-2.27 0L3.5 2.47c-.65.45-1.17 1.07-1.49 1.8L.5 6.5c-.32.73-.32 1.54 0 2.27l1.51 2.23c.32.73.84 1.35 1.49 1.8l6.73 3.97c.73.32 1.54.32 2.27 0l6.73-3.97c.65-.45 1.17-1.07 1.49-1.8L23.5 6.5c.32-.73.32-1.54 0-2.27l-1.51-2.23z" />
                                 </svg>
                                 MetaMask
                               </span>
@@ -156,11 +189,12 @@ export default function Navbar() {
                           </div>
                           {userInfo.address && (
                             <div className="text-xs text-gray-500 font-mono">
-                              {userInfo.address.slice(0, 6)}...{userInfo.address.slice(-4)}
+                              {userInfo.address.slice(0, 6)}...
+                              {userInfo.address.slice(-4)}
                             </div>
                           )}
                         </div>
-                        
+
                         <MenuItem>
                           {({ active }) => (
                             <Link
@@ -221,7 +255,7 @@ export default function Navbar() {
                     </button>
                   </>
                 )}
-                
+
                 {/* Debug button (only in development)
                 {process.env.NODE_ENV === 'development' && (
                   <button
@@ -256,7 +290,7 @@ export default function Navbar() {
             {item.name}
           </Link>
         ))}
-        
+
         {/* Mobile Authentication Buttons */}
         {!loading && !user && (
           <div className="border-t border-gray-700 mt-2 pt-2 space-y-1">
