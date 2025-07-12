@@ -2,23 +2,15 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// // https://vite.dev/config/
-// export default defineConfig({
-//   plugins: [react()],
-// })
-
-
-
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Contri Bout',
-        short_name: 'ContriBout',
-        description: 'ContriBout App',
+        name: 'VibeTribe Travel Vault',
+        short_name: 'VibeTribe',
+        description: 'Personalized Travel Vault for Monthly Investments',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
@@ -37,31 +29,9 @@ export default defineConfig({
           }
         ],
       },
-      workbox: {
-        runtimeCaching: [
-          {
-            urlPattern: ({ request }) => request.destination === 'image',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'images-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Days
-              },
-            },
-          },
-          {
-            urlPattern: ({ request }) => request.destination === 'script',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'js-cache',
-            },
-          },
-        ],
-      }
     }),
   ],
-  esbuild: {
-    loader: 'jsx',
-  }
+  define: {
+    global: 'globalThis',
+  },
 })

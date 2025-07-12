@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wagmi Test</title>
+</head>
+<body>
+    <div id="root">
+        <h1>Wagmi Test</h1>
+        <button id="connect">Connect Wallet</button>
+        <div id="status"></div>
+    </div>
+    
+    <script type="module">
+        import { createConfig, http } from 'https://esm.sh/wagmi@2.5.7'
+        import { bscTestnet } from 'https://esm.sh/wagmi@2.5.7/chains'
+        import { injected } from 'https://esm.sh/wagmi@2.5.7/connectors'
+        
+        const config = createConfig({
+            chains: [bscTestnet],
+            transports: {
+                [bscTestnet.id]: http(),
+            },
+            connectors: [
+                injected(),
+            ],
+        })
+        
+        console.log('Config created:', config)
+        document.getElementById('status').textContent = 'Wagmi config loaded successfully!'
+    </script>
+</body>
+</html> 
