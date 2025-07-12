@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import Navbar from "./Navbar";
+import { useNavigate, useParams } from 'react-router-dom';
 
 // ✅ TBNB deployed contract
 const escrowAddress = "0xae7c49a6d9AF8D2FFb9d6E0105C592a1194fB6FD";
@@ -91,30 +92,30 @@ export default function EscrowTripPage() {
   const [status, setStatus] = useState({});
   const [admin, setAdmin] = useState("");
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const { communityId } = useParams();
 
- useEffect(() => {
-  const init = async () => {
-    if (!window.ethereum) return alert("Please install MetaMask.");
-    try {
-      await window.ethereum.request({ method: "eth_requestAccounts" });
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const user = await signer.getAddress();
-
-      const contractInstance = new ethers.Contract(escrowAddress, abi, signer);
-    //   const adminAddress = await contractInstance.admin();
-
-      setContract(contractInstance);
-      setAccount(user);
-    //   setAdmin(adminAddress); // ✅ set this
-      fetchStatus(contractInstance);
-    } catch (err) {
-      console.error("Wallet connection failed:", err);
-    }
-  };
-  init();
-}, []);
-
+  useEffect(() => {
+    const init = async () => {
+      if (!window.ethereum) return alert("Please install MetaMask.");
+      try {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = await provider.getSigner();
+        const user = await signer.getAddress();
+        const contractInstance = new ethers.Contract(escrowAddress, abi, signer);
+        setContract(contractInstance);
+        setAccount(user);
+        // Fetch cost from contract
+        const cost = await contractInstance.amount();
+        setEthAmount(ethers.utils.formatEther(cost));
+        fetchStatus(contractInstance);
+      } catch (err) {
+        console.error("Wallet connection failed:", err);
+      }
+    };
+    init();
+  }, []);
 
   const fetchStatus = async (c = contract) => {
     if (!c) return;
@@ -125,8 +126,12 @@ export default function EscrowTripPage() {
       setStatus({
         isFunded,
         isReleased,
-        balance: ethers.formatEther(balance),
+        balance: ethers.utils.formatEther(balance),
       });
+      // If funded, redirect to community page
+      if (isFunded && communityId) {
+        setTimeout(() => navigate(`/community/${communityId}`), 1500);
+      }
     } catch (err) {
       console.error("Error fetching contract data:", err);
     }
@@ -134,14 +139,17 @@ export default function EscrowTripPage() {
 
   const deposit = async () => {
     if (!ethAmount || isNaN(ethAmount)) return alert("Enter valid amount");
+    if (!contract) {
+      console.error('Contract not initialized');
+      return;
+    }
     try {
       setLoading(true);
       const tx = await contract.deposit({
-        value: ethers.parseEther(ethAmount),
+        value: ethers.utils.parseEther(ethAmount),
       });
       await tx.wait();
       alert("Funds deposited!");
-      setEthAmount("");
       fetchStatus();
     } catch (err) {
       console.error(err);
@@ -195,9 +203,9 @@ export default function EscrowTripPage() {
             <input
               type="number"
               value={ethAmount}
-              onChange={(e) => setEthAmount(e.target.value)}
+              readOnly
               placeholder="Enter ETH amount"
-              className="w-full p-3 border border-gray-300 rounded-lg mb-4"
+              className="w-full p-3 border border-gray-300 rounded-lg mb-4 bg-gray-100 cursor-not-allowed"
             />
             <button
               onClick={deposit}

@@ -413,7 +413,7 @@ const CommunityDetailPage = () => {
             </div>
 
             {/* Payment and Swap Buttons - only show when community is full */}
-            {(members.length >= maxMembers) && (
+            {(members.length >= maxMembers) && isMember && (
               <div className="flex flex-col md:flex-row gap-4 mb-6">
                 <button
                   onClick={() => navigate('/escrowPay')}
@@ -422,7 +422,7 @@ const CommunityDetailPage = () => {
                   Pay Full Amount (Escrow)
                 </button>
                 {/* Swap button only for users who paid full escrow */}
-                {isMember && escrowStatus && escrowStatus.isFunded && (
+                {escrowStatus && escrowStatus.isFunded && (
                   <button
                     onClick={() => navigate('/ccts-swap')}
                     className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-4 px-8 rounded-xl font-bold text-lg shadow-lg transition-all duration-200"
