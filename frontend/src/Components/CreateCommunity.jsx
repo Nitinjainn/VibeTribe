@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
 import { collection, addDoc } from 'firebase/firestore';
 import { ethers } from 'ethers';
-import VibeTribeABI from '../../../backend/artifacts/contracts/VibeTribe.sol/VibeTribe.json';
+import VibeTribeABI from '../abis/VibeTribe.json';
 
 
 const contractAddress = '0x1d4Ba0BE46A02c3A77AfDD265A9e44C294461227'; // Your deployed contract address
