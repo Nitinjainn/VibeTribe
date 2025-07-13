@@ -42,20 +42,13 @@ const Favorites = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col pt-16">
+    <>
       <Navbar />
-      <main className="flex-1 relative bg-gradient-to-b from-teal-100 to-white">
-        {/* Grid pattern overlay */}
-        <div className="absolute inset-0 opacity-30 pointer-events-none">
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(34,197,94,0.2)_25%,rgba(34,197,94,0.2)_26%,transparent_27%,transparent_74%,rgba(34,197,94,0.2)_75%,rgba(34,197,94,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-          <div className="absolute inset-0 bg-[linear-gradient(0deg,transparent_24%,rgba(34,197,94,0.2)_25%,rgba(34,197,94,0.2)_26%,transparent_27%,transparent_74%,rgba(34,197,94,0.2)_75%,rgba(34,197,94,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-        </div>
-
-        <div className="container mx-auto px-4 py-16 relative">
-          {/* Header Section */}
-          <div className="text-center mb-12">
-            <h1 className="text-4xl font-extrabold text-gray-800 mb-4">
-              Saved Experiences
+      <div className="min-h-screen bg-gradient-to-b from-teal-50/50 to-white relative pt-16">
+        <div className="relative">
+          <div className="flex flex-col items-center justify-center py-12 space-y-6">
+            <h1 className="text-4xl font-extrabold text-teal-700 bg-clip-text">
+              Your Favorites
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">
               Your curated collection of travel experiences on the blockchain
@@ -164,8 +157,8 @@ const Favorites = () => {
             </div>
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 };
 

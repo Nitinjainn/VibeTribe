@@ -134,12 +134,6 @@ const CommunityCards = () => {
     <>
       <Navbar />
       <div className="min-h-screen bg-gradient-to-b from-teal-50/50 to-white relative pt-16">
-        {/* Grid pattern overlay */}
-        <div className="absolute inset-0 opacity-20 pointer-events-none">
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(13,148,136,0.2)_25%,rgba(13,148,136,0.2)_26%,transparent_27%,transparent_74%,rgba(13,148,136,0.2)_75%,rgba(13,148,136,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-          <div className="absolute inset-0 bg-[linear-gradient(0deg,transparent_24%,rgba(13,148,136,0.2)_25%,rgba(13,148,136,0.2)_26%,transparent_27%,transparent_74%,rgba(13,148,136,0.2)_75%,rgba(13,148,136,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-        </div>
-
         <div className="relative">
           <div className="flex flex-col items-center justify-center py-12 space-y-6">
             <h1 className="text-4xl font-extrabold text-teal-700 bg-clip-text">

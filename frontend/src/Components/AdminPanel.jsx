@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react";
 import {
   Users,
   DollarSign,
@@ -15,107 +15,108 @@ import {
   Globe,
   Calendar,
   MessageSquare,
-  Wallet
-} from "lucide-react"
-import Navbar from "./Navbar"
+  Wallet,
+} from "lucide-react";
+import Navbar from "./Navbar";
+import PropTypes from "prop-types";
 
 // Your existing EscrowAdminDecision component (unchanged)
 const EscrowAdminDecision = () => {
-  const [account, setAccount] = useState("")
-  const [contract, setContract] = useState(null)
-  const [payer, setPayer] = useState("")
-  const [balance, setBalance] = useState("0")
+  const [account, setAccount] = useState("");
+  const [contract, setContract] = useState(null);
+  const [payer, setPayer] = useState("");
+  const [balance, setBalance] = useState("0");
 
-  const escrowAddress = "0xae7c49a6d9AF8D2FFb9d6E0105C592a1194fB6FD"
-  const adminAddress = "0xAF11b2E457530e960CE5801D23e88b2d4eB0E87d"
+  const escrowAddress = "0xae7c49a6d9AF8D2FFb9d6E0105C592a1194fB6FD";
+  const adminAddress = "0xAF11b2E457530e960CE5801D23e88b2d4eB0E87d";
 
   const abi = [
     {
       inputs: [{ internalType: "address", name: "_payee", type: "address" }],
       stateMutability: "nonpayable",
-      type: "constructor"
+      type: "constructor",
     },
     {
       inputs: [],
       name: "payer",
       outputs: [{ internalType: "address", name: "", type: "address" }],
       stateMutability: "view",
-      type: "function"
+      type: "function",
     },
     {
       inputs: [],
       name: "releaseToAdmin",
       outputs: [],
       stateMutability: "nonpayable",
-      type: "function"
+      type: "function",
     },
     {
       inputs: [],
       name: "refundToPayer",
       outputs: [],
       stateMutability: "nonpayable",
-      type: "function"
+      type: "function",
     },
     {
       inputs: [],
       name: "getBalance",
       outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
       stateMutability: "view",
-      type: "function"
-    }
-  ]
+      type: "function",
+    },
+  ];
 
   useEffect(() => {
     const init = async () => {
       if (typeof window !== "undefined" && window.ethereum) {
         try {
-          const { ethers } = await import("ethers")
-          const provider = new ethers.BrowserProvider(window.ethereum)
-          const signer = await provider.getSigner()
-          const user = await signer.getAddress()
+          const { ethers } = await import("ethers");
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
+          const user = await signer.getAddress();
 
           const contractInstance = new ethers.Contract(
             escrowAddress,
             abi,
             signer
-          )
-          const payer = await contractInstance.payer()
-          const bal = await contractInstance.getBalance()
+          );
+          const payer = await contractInstance.payer();
+          const bal = await contractInstance.getBalance();
 
-          setContract(contractInstance)
-          setAccount(user)
-          setPayer(payer)
-          setBalance(ethers.formatEther(bal))
+          setContract(contractInstance);
+          setAccount(user);
+          setPayer(payer);
+          setBalance(ethers.formatEther(bal));
         } catch (error) {
-          console.error("Error initializing contract:", error)
+          console.error("Error initializing contract:", error);
         }
       }
-    }
+    };
 
-    init()
-  }, [])
+    init();
+  }, []);
 
   const releaseToAdmin = async () => {
     try {
-      const tx = await contract.releaseToAdmin()
-      await tx.wait()
-      alert("Released to admin.")
+      const tx = await contract.releaseToAdmin();
+      await tx.wait();
+      alert("Released to admin.");
     } catch (err) {
-      console.error(err)
-      alert("Error during release.")
+      console.error(err);
+      alert("Error during release.");
     }
-  }
+  };
 
   const refundToPayer = async () => {
     try {
-      const tx = await contract.refundToPayer()
-      await tx.wait()
-      alert("Refunded to payer.")
+      const tx = await contract.refundToPayer();
+      await tx.wait();
+      alert("Refunded to payer.");
     } catch (err) {
-      console.error(err)
-      alert("Error during refund.")
+      console.error(err);
+      alert("Error during refund.");
     }
-  }
+  };
 
   return (
     <div className="max-w-md mx-auto bg-white shadow-lg p-6 mt-10 rounded-lg">
@@ -149,8 +150,8 @@ const EscrowAdminDecision = () => {
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
 // Mock data for demonstration
 const mockData = {
@@ -158,7 +159,7 @@ const mockData = {
     totalUsers: 12847,
     activeBookings: 324,
     totalRevenue: 2847.92,
-    disputesCases: 12
+    disputesCases: 12,
   },
   users: [
     {
@@ -168,7 +169,7 @@ const mockData = {
       status: "active",
       walletAddress: "0x1234...5678",
       joinDate: "2024-01-15",
-      totalSpent: 1250.5
+      totalSpent: 1250.5,
     },
     {
       id: 2,
@@ -177,7 +178,7 @@ const mockData = {
       status: "suspended",
       walletAddress: "0xabcd...efgh",
       joinDate: "2024-02-20",
-      totalSpent: 890.25
+      totalSpent: 890.25,
     },
     {
       id: 3,
@@ -186,8 +187,8 @@ const mockData = {
       status: "active",
       walletAddress: "0x9876...5432",
       joinDate: "2024-03-10",
-      totalSpent: 2340.75
-    }
+      totalSpent: 2340.75,
+    },
   ],
   bookings: [
     {
@@ -196,7 +197,7 @@ const mockData = {
       destination: "Bali, Indonesia",
       dates: "2024-07-15 - 2024-07-22",
       status: "confirmed",
-      amount: 1200.0
+      amount: 1200.0,
     },
     {
       id: 2,
@@ -204,7 +205,7 @@ const mockData = {
       destination: "Tokyo, Japan",
       dates: "2024-08-01 - 2024-08-08",
       status: "pending",
-      amount: 1800.5
+      amount: 1800.5,
     },
     {
       id: 3,
@@ -212,8 +213,8 @@ const mockData = {
       destination: "Paris, France",
       dates: "2024-07-20 - 2024-07-27",
       status: "dispute",
-      amount: 950.25
-    }
+      amount: 950.25,
+    },
   ],
   disputes: [
     {
@@ -222,7 +223,7 @@ const mockData = {
       issue: "Accommodation not as described",
       status: "investigating",
       amount: 950.25,
-      date: "2024-07-08"
+      date: "2024-07-08",
     },
     {
       id: 2,
@@ -230,65 +231,70 @@ const mockData = {
       issue: "Flight cancellation dispute",
       status: "resolved",
       amount: 650.0,
-      date: "2024-07-05"
-    }
-  ]
-}
+      date: "2024-07-05",
+    },
+  ],
+};
+
+const StatCard = ({ title, value, icon: Icon }) => (
+  <div className="bg-white/80 backdrop-blur-md rounded-xl p-6 border border-teal-100 shadow-lg hover:shadow-xl transition-all duration-300">
+    <div className="flex items-center justify-between">
+      <div>
+        <p className="text-gray-600 text-sm font-medium">{title}</p>
+        <p className="text-2xl font-bold text-teal-700">{value}</p>
+      </div>
+      <Icon className="w-8 h-8 text-teal-600" />
+    </div>
+  </div>
+);
+StatCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  icon: PropTypes.elementType.isRequired,
+};
 
 const VibeTribeAdmin = () => {
-  const [activeTab, setActiveTab] = useState("dashboard")
-  const [searchTerm, setSearchTerm] = useState("")
-  const [notifications, setNotifications] = useState([
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [users, setUsers] = useState(mockData.users);
+  const [bookings, setBookings] = useState(mockData.bookings);
+  // notifications is not set, so remove setNotifications
+  const notifications = [
     {
       id: 1,
       message: "New dispute filed by Carol Davis",
       type: "warning",
-      time: "2 hours ago"
+      time: "2 hours ago",
     },
     {
       id: 2,
       message: "Payment verification required for booking #1234",
       type: "info",
-      time: "4 hours ago"
+      time: "4 hours ago",
     },
     {
       id: 3,
       message: "System maintenance scheduled for tonight",
       type: "info",
-      time: "6 hours ago"
-    }
-  ])
-
-  const [users, setUsers] = useState(mockData.users)
-  const [bookings, setBookings] = useState(mockData.bookings)
-
-  const StatCard = ({ title, value, icon: Icon }) => (
-    <div className="bg-white/80 backdrop-blur-md rounded-xl p-6 border border-teal-100 shadow-lg hover:shadow-xl transition-all duration-300">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-gray-600 text-sm font-medium">{title}</p>
-          <p className="text-2xl font-bold text-teal-700">{value}</p>
-        </div>
-        <Icon className="w-8 h-8 text-teal-600" />
-      </div>
-    </div>
-  )
+      time: "6 hours ago",
+    },
+  ];
 
   const handleUserStatusChange = (userId, newStatus) => {
     setUsers(
-      users.map(user =>
+      users.map((user) =>
         user.id === userId ? { ...user, status: newStatus } : user
       )
-    )
-  }
+    );
+  };
 
   const handleBookingStatusChange = (bookingId, newStatus) => {
     setBookings(
-      bookings.map(booking =>
+      bookings.map((booking) =>
         booking.id === bookingId ? { ...booking, status: newStatus } : booking
       )
-    )
-  }
+    );
+  };
 
   const renderDashboard = () => (
     <div className="space-y-6">
@@ -325,7 +331,7 @@ const VibeTribeAdmin = () => {
             Recent Bookings
           </h3>
           <div className="space-y-3">
-            {bookings.slice(0, 3).map(booking => (
+            {bookings.slice(0, 3).map((booking) => (
               <div
                 key={booking.id}
                 className="flex items-center justify-between p-4 bg-teal-50/50 rounded-lg border border-teal-100"
@@ -358,7 +364,7 @@ const VibeTribeAdmin = () => {
             System Notifications
           </h3>
           <div className="space-y-3">
-            {notifications.map(notification => (
+            {notifications.map((notification) => (
               <div
                 key={notification.id}
                 className="flex items-start space-x-3 p-4 bg-teal-50/50 rounded-lg border border-teal-100"
@@ -382,7 +388,7 @@ const VibeTribeAdmin = () => {
         </div>
       </div>
     </div>
-  )
+  );
 
   const renderUserManagement = () => (
     <div className="space-y-6">
@@ -395,7 +401,7 @@ const VibeTribeAdmin = () => {
               type="text"
               placeholder="Search users..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
+              onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-4 py-2 border border-teal-100 rounded-lg focus:ring-2 focus:ring-teal-500/40 focus:border-transparent bg-white/80"
             />
           </div>
@@ -430,12 +436,15 @@ const VibeTribeAdmin = () => {
           <tbody className="divide-y divide-teal-100">
             {users
               .filter(
-                user =>
+                (user) =>
                   user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   user.email.toLowerCase().includes(searchTerm.toLowerCase())
               )
-              .map(user => (
-                <tr key={user.id} className="hover:bg-teal-50/50 transition-colors duration-150">
+              .map((user) => (
+                <tr
+                  key={user.id}
+                  className="hover:bg-teal-50/50 transition-colors duration-150"
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <p className="text-sm font-medium text-teal-700">
@@ -485,7 +494,7 @@ const VibeTribeAdmin = () => {
         </table>
       </div>
     </div>
-  )
+  );
 
   const renderBookingManagement = () => (
     <div className="space-y-6">
@@ -519,7 +528,7 @@ const VibeTribeAdmin = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {bookings.map(booking => (
+            {bookings.map((booking) => (
               <tr key={booking.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   #{booking.id.toString().padStart(4, "0")}
@@ -573,7 +582,7 @@ const VibeTribeAdmin = () => {
         </table>
       </div>
     </div>
-  )
+  );
 
   const renderDisputeManagement = () => (
     <div className="space-y-6">
@@ -607,7 +616,7 @@ const VibeTribeAdmin = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {mockData.disputes.map(dispute => (
+            {mockData.disputes.map((dispute) => (
               <tr key={dispute.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   #D{dispute.id.toString().padStart(3, "0")}
@@ -649,7 +658,7 @@ const VibeTribeAdmin = () => {
         </table>
       </div>
     </div>
-  )
+  );
 
   const renderEscrowManagement = () => (
     <div className="space-y-6">
@@ -690,7 +699,7 @@ const VibeTribeAdmin = () => {
         </div>
       </div>
     </div>
-  )
+  );
 
   const tabs = [
     { id: "dashboard", label: "Dashboard", icon: TrendingUp },
@@ -698,23 +707,17 @@ const VibeTribeAdmin = () => {
     { id: "bookings", label: "Bookings", icon: Calendar },
     { id: "disputes", label: "Disputes", icon: AlertTriangle },
     { id: "escrow", label: "Escrow", icon: Wallet },
-    { id: "settings", label: "Settings", icon: Settings }
-  ]
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50/50 to-white relative">
-      {/* Grid pattern overlay */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(13,148,136,0.2)_25%,rgba(13,148,136,0.2)_26%,transparent_27%,transparent_74%,rgba(13,148,136,0.2)_75%,rgba(13,148,136,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,transparent_24%,rgba(13,148,136,0.2)_25%,rgba(13,148,136,0.2)_26%,transparent_27%,transparent_74%,rgba(13,148,136,0.2)_75%,rgba(13,148,136,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-      </div>
-
+    <div className="min-h-screen bg-gradient-to-b from-teal-50/50 to-white">
+      {/* Main Navbar at the very top */}
       <Navbar />
-
-      <div className="flex pt-20">
-        {/* Sidebar */}
-        <div className="w-64 bg-white/80 backdrop-blur-md border-r border-teal-100 h-[calc(100vh-5rem)] fixed left-0 top-20">
-          <div className="p-6">
+      <div className="flex">
+        {/* Sidebar, starts below navbar (h-16 = 64px) */}
+        <aside className="w-64 bg-white/80 backdrop-blur-md border-r border-teal-100 h-[calc(100vh-4rem)] fixed left-0 top-16 z-20 flex flex-col overflow-y-auto">
+          <div className="p-6 pt-8">
             <div className="flex items-center space-x-3 mb-8">
               <div className="w-8 h-8 bg-gradient-to-r from-teal-600 to-teal-700 rounded-lg flex items-center justify-center">
                 <Globe className="w-5 h-5 text-white" />
@@ -723,9 +726,8 @@ const VibeTribeAdmin = () => {
                 VibeTribe Admin
               </h1>
             </div>
-
             <nav className="space-y-2">
-              {tabs.map(tab => (
+              {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -741,11 +743,12 @@ const VibeTribeAdmin = () => {
               ))}
             </nav>
           </div>
-        </div>
+        </aside>
 
-        {/* Main Content */}
-        <div className="flex-1 ml-64">
-          <div className="p-8">
+        {/* Main Content, margin-left for sidebar, padding-top for navbar */}
+        <div className="flex-1 ml-64 pt-16 min-h-screen flex flex-col">
+          {/* Main Scrollable Content */}
+          <main className="flex-1 p-8 overflow-y-auto">
             {activeTab === "dashboard" && renderDashboard()}
             {activeTab === "users" && renderUserManagement()}
             {activeTab === "bookings" && renderBookingManagement()}
@@ -762,11 +765,11 @@ const VibeTribeAdmin = () => {
                 </p>
               </div>
             )}
-          </div>
+          </main>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default VibeTribeAdmin
+export default VibeTribeAdmin;

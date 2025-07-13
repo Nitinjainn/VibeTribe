@@ -47,12 +47,6 @@ export default function CampaignList() {
         <div className="absolute bottom-20 left-1/3 w-28 h-28 border border-blue-500 rounded-full animate-pulse delay-2000"></div>
         <div className="absolute bottom-40 right-1/4 w-24 h-24 border border-blue-500 rounded-full animate-pulse delay-500"></div>
       </div>
-      
-      {/* Grid pattern overlay */}
-      <div className="absolute inset-0 opacity-30 pointer-events-none">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(34,197,94,0.2)_25%,rgba(34,197,94,0.2)_26%,transparent_27%,transparent_74%,rgba(34,197,94,0.2)_75%,rgba(34,197,94,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,transparent_24%,rgba(34,197,94,0.2)_25%,rgba(34,197,94,0.2)_26%,transparent_27%,transparent_74%,rgba(34,197,94,0.2)_75%,rgba(34,197,94,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-      </div>
 
       <div className="mx-auto max-w-6xl px-6 sm:px-8 lg:px-12 relative z-10">
         {/* Web3 badge */}

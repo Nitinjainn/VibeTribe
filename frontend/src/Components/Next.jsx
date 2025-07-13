@@ -1,11 +1,6 @@
 export default function FundraiserStats() {
   return (
     <div className="relative min-h-screen flex items-center justify-center px-4 sm:px-6 bg-white overflow-hidden">
-      {/* Grid pattern overlay */}
-      <div className="absolute inset-0 opacity-30 pointer-events-none z-0">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_24%,rgba(34,197,94,0.2)_25%,rgba(34,197,94,0.2)_26%,transparent_27%,transparent_74%,rgba(34,197,94,0.2)_75%,rgba(34,197,94,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,transparent_24%,rgba(34,197,94,0.2)_25%,rgba(34,197,94,0.2)_26%,transparent_27%,transparent_74%,rgba(34,197,94,0.2)_75%,rgba(34,197,94,0.2)_76%,transparent_77%,transparent)] bg-[length:40px_40px]"></div>
-      </div>
       <div className="w-full max-w-6xl flex flex-wrap justify-center items-center md:space-x-10 space-x-0 space-y-10 md:space-y-0 md:flex-nowrap relative z-10">
         {/* Left Side Images */}
         <div className="flex flex-col items-center space-y-6 md:w-1/3 w-full">
