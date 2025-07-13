@@ -13,7 +13,7 @@ import {
   Star,
   ArrowRight,
   Copy,
-  Check
+  Check,
 } from "lucide-react";
 import Navbar from "./Navbar";
 
@@ -462,7 +462,7 @@ const HowItWorks = () => {
 
         {/* Main Content */}
         <main className="flex-1 md:ml-80 min-h-0 flex flex-col pt-20">
-          <div className="max-w-4xl mx-auto px-6 py-8 w-full">
+          <div className="mx-auto px-6 py-8 w-full">
             {/* Article Header */}
             <div className="mb-8">
               <div className="flex items-center gap-3 mb-4">
