@@ -37,13 +37,8 @@ const Login = () => {
         const userData = userDoc.data();
         localStorage.setItem('userData', JSON.stringify(userData));
         const userRole = (userData.role || 'user').toLowerCase();
-        if (userRole === 'admin') {
-          alert('Admin login successful!');
-          navigate('/admin');
-        } else {
-          alert('Login successful!');
-          navigate('/');
-        }
+        alert('Login successful!');
+        navigate('/');
       } else {
         setErrors({ general: 'Error retrieving user data' });
       }
@@ -61,13 +56,8 @@ const Login = () => {
       if (result.success) {
         debugAuth();
         const userRole = (result.userData.role || 'user').toLowerCase();
-        if (userRole === 'admin') {
-          alert('Admin login successful with MetaMask!');
-          navigate('/admin');
-        } else {
-          alert('MetaMask login successful!');
-          navigate('/');
-        }
+        alert('MetaMask login successful!');
+        navigate('/');
       } else {
         if (result.error.includes('rejected the signature request')) {
           const retry = window.confirm(

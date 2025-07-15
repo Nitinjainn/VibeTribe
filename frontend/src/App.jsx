@@ -11,11 +11,9 @@ import AboutUs from "./Components/AboutUs";
 import Favorites from "./Components/Favorites";
 import Profile from "./Components/Profile";
 import ScrollToTop from "./Components/ScrollToTop";
-import ProfileCompletion from "./Components/ProfileCompletion";
 import CommunityDetailPage from "./Components/CommunityDetailPage";
 import "./App.css";
 import EscrowTripPage from "./Components/EscrowTripPage";
-import VibeTribeAdmin from "./Components/AdminPanel";
 import CCTSSwap from "./Components/CCTSSwap";
 
 function App() {
@@ -38,8 +36,7 @@ function App() {
           <Route path="/Favorites" element={<Favorites />} />
           <Route path="/Profile" element={<Profile />} />
           <Route path="/escrowPay" element={<EscrowTripPage />} />
-          <Route path="/admin" element={<VibeTribeAdmin />} />
-          <Route path="/profile-completion" element={<ProfileCompletion />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/ccts-swap" element={<CCTSSwap />} />
         </Routes>
       </div>
