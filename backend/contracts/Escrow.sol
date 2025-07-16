@@ -4,11 +4,11 @@ pragma solidity ^0.8.20;
 contract Escrow {
     address public payee;
     address public admin;
-    address public payer; // ✅ Track who paid
 
-    uint public amount;
-    bool public isFunded;
-    bool public isReleased;
+    mapping(address => uint256) public paidAmount; // Track how much each user paid
+    mapping(address => bool) public hasJoined;     // Track if user has joined
+
+    event Joined(address indexed user, uint256 amount);
 
     constructor(address _payee) {
         payee = _payee;
@@ -21,25 +21,11 @@ contract Escrow {
     }
 
     function deposit() external payable {
-        require(!isFunded, "Already funded");
+        require(!hasJoined[msg.sender], "Already funded");
         require(msg.value > 0, "Amount must be greater than 0");
-        payer = msg.sender; // ✅ Set payer
-        amount = msg.value;
-        isFunded = true;
-    }
-
-    function releaseFunds() external onlyAdmin {
-        require(isFunded, "Not funded");
-        require(!isReleased, "Already released");
-        isReleased = true;
-        payable(payee).transfer(amount);
-    }
-
-    function refund() external onlyAdmin {
-        require(isFunded, "Not funded");
-        require(!isReleased, "Already released");
-        isReleased = true;
-        payable(payer).transfer(amount);
+        paidAmount[msg.sender] = msg.value;
+        hasJoined[msg.sender] = true;
+        emit Joined(msg.sender, msg.value);
     }
 
     function getBalance() external view returns (uint) {

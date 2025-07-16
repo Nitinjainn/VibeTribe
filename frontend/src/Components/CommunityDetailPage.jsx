@@ -17,6 +17,8 @@ import metamaskAuth from '../utils/metamaskAuth';
 import { useState as useModalState } from 'react';
 import EscrowTripPage from "./EscrowTripPage";
 import { ethers } from "ethers";
+import ProposalForm from './ProposalForm';
+import ProposalList from './ProposalList';
 
 const CommunityDetailPage = () => {
   const { id } = useParams();
@@ -38,8 +40,15 @@ const CommunityDetailPage = () => {
   const [escrowError, setEscrowError] = useState("");
   const [ethAmount, setEthAmount] = useState("");
   const [escrowStatus, setEscrowStatus] = useState({ isFunded: false });
+  const [votingContract, setVotingContract] = useState(null);
+  const [votingAddress, setVotingAddress] = useState("");
+  const [proposals, setProposals] = useState([]);
+  const [votingStatus, setVotingStatus] = useState({});
+  const [votingLoading, setVotingLoading] = useState(false);
+  const [joinPaidMembers, setJoinPaidMembers] = useState({});
+  const [fullPaidMembers, setFullPaidMembers] = useState({});
 
-  const escrowAddress = "0xae7c49a6d9AF8D2FFb9d6E0105C592a1194fB6FD";
+  const escrowAddress = "0x8a0B09ad25905049A488bB8596eEe81c4F705475";
   const escrowAbi = [
     "function isFunded() public view returns (bool)",
     "function deposit() payable",
@@ -124,6 +133,20 @@ const CommunityDetailPage = () => {
     return () => { isMounted = false; };
   }, [members]);
 
+  // Fetch joinPaidMembers and fullPaidMembers from Firestore
+  useEffect(() => {
+    if (!id) return;
+    const docRef = doc(db, "communities", id);
+    const unsub = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setJoinPaidMembers(data.joinPaidMembers || {});
+        setFullPaidMembers(data.fullPaidMembers || {});
+      }
+    });
+    return () => unsub();
+  }, [id]);
+
   // MetaMask connection logic
   useEffect(() => {
     if (metamaskAuth.isAuthenticated()) {
@@ -165,28 +188,36 @@ const CommunityDetailPage = () => {
     try {
       if (!window.ethereum) throw new Error("Please install MetaMask.");
       await window.ethereum.request({ method: "eth_requestAccounts" });
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(escrowAddress, escrowAbi, signer);
-      // Check if already funded
-      const funded = await contract.isFunded();
-      if (funded) {
-        await addUserToCommunity();
-        setShowEscrowModal(false);
-        return;
-      }
-      if (!ethAmount || isNaN(ethAmount)) throw new Error("Enter valid amount");
-      const tx = await contract.deposit({ value: ethers.parseEther(ethAmount) });
+      // Fixed joining fee
+      const joiningFee = "0.0001";
+      // On-chain payment
+      const tx = await contract.deposit({ value: ethers.utils.parseEther(joiningFee) });
       await tx.wait();
-      await addUserToCommunity();
+      // Off-chain: update joinPaidMembers and add user to community
+      const communityRef = doc(db, "communities", id);
+      await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(communityRef);
+        if (!docSnap.exists()) throw new Error("Community does not exist");
+        const data = docSnap.data();
+        const currentMembers = Array.isArray(data.members) ? data.members : [];
+        const memberJoinTimestamps = data.memberJoinTimestamps || {};
+        const joinPaidMembers = data.joinPaidMembers || {};
+        if (currentMembers.includes(walletAddress)) return;
+        if (currentMembers.length >= data.maxMembers) throw new Error("Community is full");
+        transaction.update(communityRef, {
+          members: [...currentMembers, walletAddress],
+          peopleCount: currentMembers.length + 1,
+          memberJoinTimestamps: { ...memberJoinTimestamps, [walletAddress]: Date.now() },
+          joinPaidMembers: { ...joinPaidMembers, [walletAddress]: joiningFee },
+        });
+      });
+      setIsMember(true);
       setShowEscrowModal(false);
     } catch (err) {
-      if (err.reason && err.reason.includes("Already funded")) {
-        await addUserToCommunity();
-        setShowEscrowModal(false);
-      } else {
-        setEscrowError(err.message || "Payment failed.");
-      }
+      setEscrowError(err.message || "Payment failed.");
     } finally {
       setEscrowLoading(false);
     }
@@ -226,6 +257,218 @@ const CommunityDetailPage = () => {
       setShowConnectModal(true);
     }
   };
+
+  // Check if community is full and all members have paid (simplified: all members joined)
+  const isCommunityFull = members.length === maxMembers && maxMembers > 0;
+  // Has the user paid the join fee?
+  const hasPaidJoin = !!joinPaidMembers[walletAddress];
+  const allPaidJoin = Object.keys(joinPaidMembers).length === maxMembers && Object.values(joinPaidMembers).every(a => parseFloat(a) > 0);
+
+  // Helper for case-insensitive address lookup
+  const getPaidAmount = (obj, addr) => {
+    if (!addr) return 0;
+    const key = Object.keys(obj).find(k => k.toLowerCase() === addr.toLowerCase());
+    return key ? parseFloat(obj[key]) : 0;
+  };
+  const joinPaid = getPaidAmount(joinPaidMembers, walletAddress);
+  const fullPaid = getPaidAmount(fullPaidMembers, walletAddress);
+  const estimatedCost = parseFloat(community?.costEstimated || 0);
+  const remaining = Math.max(estimatedCost - joinPaid, 0).toFixed(4);
+  const hasPaidFull = fullPaid >= estimatedCost;
+  const allPaidFull = Object.keys(fullPaidMembers).length === maxMembers && Object.values(fullPaidMembers).every(a => parseFloat(a) >= estimatedCost);
+
+  // Fetch or deploy TripVoting contract
+  useEffect(() => {
+    const fetchOrDeployVoting = async () => {
+      if (!isCommunityFull || !isMember) return;
+      setVotingLoading(true);
+      try {
+        // 1. Check Firestore for voting contract address
+        const docRef = doc(db, 'communities', id);
+        const docSnap = await getDoc(docRef);
+        let votingAddr = docSnap.data()?.votingContract;
+        let contract;
+        if (!votingAddr) {
+          // 2. Deploy TripVoting contract if not present
+          if (!window.ethereum) throw new Error('MetaMask required');
+          await window.ethereum.request({ method: 'eth_requestAccounts' });
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const signer = await provider.getSigner();
+          // Load ABI and bytecode (assume ABI/bytecode are available, e.g. import TripVoting.json)
+          const tripVotingArtifact = await import('../abis/TripVoting.json');
+          const factory = new ethers.ContractFactory(tripVotingArtifact.abi, tripVotingArtifact.bytecode, signer);
+          const tx = await factory.deploy(members);
+          await tx.deployed();
+          votingAddr = tx.address;
+          // Save to Firestore
+          await updateDoc(docRef, { votingContract: votingAddr });
+          contract = tx;
+        } else {
+          // 3. Connect to existing contract
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const signer = await provider.getSigner();
+          const tripVotingArtifact = await import('../abis/TripVoting.json');
+          contract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+        }
+        setVotingAddress(votingAddr);
+        setVotingContract(contract);
+      } catch (err) {
+        console.error('Voting contract error:', err);
+      } finally {
+        setVotingLoading(false);
+      }
+    };
+    fetchOrDeployVoting();
+    // eslint-disable-next-line
+  }, [isCommunityFull, isMember, members]);
+
+  // Fetch proposals from contract
+  useEffect(() => {
+    const fetchProposals = async () => {
+      if (!votingContract) return;
+      try {
+        const count = await votingContract.getProposalCount();
+        const arr = [];
+        for (let i = 0; i < count; i++) {
+          const p = await votingContract.getProposal(i);
+          arr.push({
+            description: p[0],
+            yesVotes: Number(p[1]),
+            noVotes: Number(p[2]),
+            endTime: Number(p[3]),
+            passed: p[4],
+            executed: p[4] !== undefined, // crude: if passed is set, assume executed
+          });
+        }
+        setProposals(arr);
+      } catch (err) {
+        console.error('Fetch proposals error:', err);
+      }
+    };
+    fetchProposals();
+  }, [votingContract]);
+
+  // Voting status per proposal
+  useEffect(() => {
+    const fetchVotingStatus = async () => {
+      if (!votingContract || !walletAddress) return;
+      try {
+        const arr = [];
+        for (let i = 0; i < proposals.length; i++) {
+          // Read voted mapping (not directly accessible, so try/catch)
+          let voted = false;
+          try {
+            voted = await votingContract.proposals(i).then(p => p.voted(walletAddress));
+          } catch {}
+          arr.push({ voted });
+        }
+        setVotingStatus(arr);
+      } catch (err) {
+        // fallback: mark all as not voted
+        setVotingStatus(Array(proposals.length).fill({ voted: false }));
+      }
+    };
+    fetchVotingStatus();
+  }, [votingContract, proposals, walletAddress]);
+
+  // Proposal creation handler
+  const handleCreateProposal = async ({ description, duration }) => {
+    if (!votingContract) return;
+    setVotingLoading(true);
+    try {
+      const tx = await votingContract.createProposal(description, duration);
+      await tx.wait();
+      // Refresh proposals
+      const count = await votingContract.getProposalCount();
+      const p = await votingContract.getProposal(count - 1);
+      setProposals([...proposals, {
+        description: p[0],
+        yesVotes: Number(p[1]),
+        noVotes: Number(p[2]),
+        endTime: Number(p[3]),
+        passed: p[4],
+        executed: p[4] !== undefined,
+      }]);
+    } catch (err) {
+      alert('Proposal creation failed: ' + (err.reason || err.message));
+    } finally {
+      setVotingLoading(false);
+    }
+  };
+
+  // Voting handler
+  const handleVote = async (id, inFavor) => {
+    if (!votingContract) return;
+    setVotingLoading(true);
+    try {
+      const tx = await votingContract.vote(id, inFavor);
+      await tx.wait();
+      // Refresh proposals and voting status
+      const count = await votingContract.getProposalCount();
+      const arr = [];
+      for (let i = 0; i < count; i++) {
+        const p = await votingContract.getProposal(i);
+        arr.push({
+          description: p[0],
+          yesVotes: Number(p[1]),
+          noVotes: Number(p[2]),
+          endTime: Number(p[3]),
+          passed: p[4],
+          executed: p[4] !== undefined,
+        });
+      }
+      setProposals(arr);
+    } catch (err) {
+      alert('Voting failed: ' + (err.reason || err.message));
+    } finally {
+      setVotingLoading(false);
+    }
+  };
+
+  // Finalize proposal
+  const handleFinalize = async (id) => {
+    if (!votingContract) return;
+    setVotingLoading(true);
+    try {
+      const tx = await votingContract.finalize(id);
+      await tx.wait();
+      // Refresh proposals
+      const count = await votingContract.getProposalCount();
+      const arr = [];
+      for (let i = 0; i < count; i++) {
+        const p = await votingContract.getProposal(i);
+        arr.push({
+          description: p[0],
+          yesVotes: Number(p[1]),
+          noVotes: Number(p[2]),
+          endTime: Number(p[3]),
+          passed: p[4],
+          executed: p[4] !== undefined,
+        });
+      }
+      setProposals(arr);
+    } catch (err) {
+      alert('Finalize failed: ' + (err.reason || err.message));
+    } finally {
+      setVotingLoading(false);
+    }
+  };
+
+  // Always check escrow status on page load and when escrowAddress changes
+  useEffect(() => {
+    const checkEscrowStatus = async () => {
+      if (!window.ethereum) return;
+      try {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const contract = new ethers.Contract(escrowAddress, escrowAbi, provider);
+        const isFunded = await contract.isFunded();
+        setEscrowStatus({ isFunded });
+      } catch (err) {
+        // Optionally handle error
+      }
+    };
+    checkEscrowStatus();
+  }, [escrowAddress]);
 
   if (!community) {
     return (
@@ -412,26 +655,21 @@ const CommunityDetailPage = () => {
               )}
             </div>
 
-            {/* Payment and Swap Buttons - only show when community is full */}
-            {(members.length >= maxMembers) && isMember && (
-              <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <button
-                  onClick={() => navigate('/escrowPay')}
-                  className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-4 px-8 rounded-xl font-bold text-lg shadow-lg transition-all duration-200"
-                >
-                  Pay Full Amount (Escrow)
-                </button>
-                {/* Swap button only for users who paid full escrow */}
-                {escrowStatus && escrowStatus.isFunded && (
-                  <button
-                    onClick={() => navigate('/ccts-swap')}
-                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-4 px-8 rounded-xl font-bold text-lg shadow-lg transition-all duration-200"
-                  >
-                    Swap This Trip
-                  </button>
-                )}
+            {/* Payment and Swap Buttons - only show when community is full and user is member */}
+            {/* Remove Pay Full Amount button and show voting UI as soon as community is full and user is a member */}
+            {/* {(members.length >= maxMembers) && isMember && (
+              <div className="w-full mt-4">
+                <h2 className="text-2xl font-bold text-teal-700 mb-4">Trip Proposals & Voting</h2>
+                <ProposalForm onSubmit={handleCreateProposal} disabled={votingLoading} />
+                <ProposalList
+                  proposals={proposals}
+                  onVote={handleVote}
+                  onFinalize={handleFinalize}
+                  currentUser={walletAddress}
+                  votingStatus={votingStatus}
+                />
               </div>
-            )}
+            )} */}
 
             {/* Recent Activity */}
             <div className="bg-white/80 backdrop-blur-md rounded-2xl p-6 border border-teal-100 shadow-lg">
@@ -563,22 +801,47 @@ const CommunityDetailPage = () => {
           <div className="relative bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full flex flex-col items-center animate-fadeIn">
             <button onClick={() => setShowEscrowModal(false)} className="absolute top-2 right-2 text-gray-400 hover:text-teal-700 text-2xl font-bold">&times;</button>
             <h2 className="text-2xl font-bold text-teal-700 mb-4">Escrow Payment</h2>
-            <input
-              type="number"
-              value={ethAmount}
-              onChange={e => setEthAmount(e.target.value)}
-              placeholder="Enter ETH amount"
-              className="w-full px-4 py-2 border border-teal-200 rounded mb-4"
-              disabled={escrowLoading}
-            />
+            {/* Remove ethAmount input for joining fee */}
             {escrowError && <div className="text-red-500 mb-2">{escrowError}</div>}
             <button
               onClick={handleEscrowPay}
               className="w-full bg-teal-700 hover:bg-teal-800 text-white py-3 px-8 rounded-xl transition-all duration-300 font-medium flex items-center justify-center gap-3 mb-2"
-              disabled={escrowLoading}
+              disabled={escrowLoading || hasPaidJoin}
             >
-              {escrowLoading ? 'Processing...' : 'Pay & Join'}
+              {escrowLoading ? 'Processing...' : 'Pay & Join (0.0001 ETH)'}
             </button>
+            {hasPaidJoin && (
+              <div className="text-green-600 font-semibold mt-2">You have already funded this trip. No further payment is required.</div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Trip Proposals & Voting section at the bottom - side by side layout */}
+      {(members.length >= maxMembers) && isMember && (
+        <div className="container mx-auto px-4 py-12 mt-12">
+          <div className="bg-gradient-to-br from-teal-50 via-white to-teal-100 border-4 border-teal-200/60 rounded-3xl shadow-2xl shadow-teal-100/40 p-10 flex flex-col items-center relative overflow-hidden">
+            <div className="absolute -top-8 -left-8 w-32 h-32 bg-teal-100 rounded-full opacity-30 blur-2xl pointer-events-none"></div>
+            <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-teal-200 rounded-full opacity-20 blur-2xl pointer-events-none"></div>
+            <h2 className="text-3xl font-extrabold text-teal-700 mb-2 text-center drop-shadow-lg">Trip Proposals & Voting</h2>
+            <p className="text-lg text-teal-800 mb-8 text-center max-w-2xl">Participate in shaping your trip! Submit new proposals or vote on existing ones to help decide important details for your community adventure.</p>
+            <div className="w-full flex flex-col md:flex-row gap-8 md:gap-12 items-stretch justify-center min-h-[420px] md:min-h-[480px]">
+              <div className="flex-1 w-full md:max-w-md bg-white/90 border border-teal-100 rounded-2xl shadow-lg flex flex-col justify-center p-6" style={{ minHeight: '420px', height: '100%' }}>
+                {/* Render ProposalForm directly, let the parent card provide the background and padding */}
+                <ProposalForm onSubmit={handleCreateProposal} disabled={votingLoading} noCard />
+              </div>
+              <div className="hidden md:block h-full w-0.5 bg-teal-100 rounded-full mx-2"></div>
+              <div className="flex-1 w-full bg-white/90 border border-teal-100 rounded-2xl shadow-lg flex flex-col p-4" style={{ minHeight: '420px', height: '100%' }}>
+                <div className="flex-1 overflow-y-auto max-h-[400px] pr-2">
+                  <ProposalList
+                    proposals={proposals}
+                    onVote={handleVote}
+                    onFinalize={handleFinalize}
+                    currentUser={walletAddress}
+                    votingStatus={votingStatus}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

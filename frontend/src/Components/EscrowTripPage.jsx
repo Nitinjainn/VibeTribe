@@ -2,10 +2,12 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import Navbar from "./Navbar";
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { db } from '../firebaseConfig';
+import { doc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore';
 
 // ✅ TBNB deployed contract
-const escrowAddress = "0xae7c49a6d9AF8D2FFb9d6E0105C592a1194fB6FD";
+const escrowAddress = "0xe0E3f59652Fe7ACB6C7A1F71BaA9754A69732E15";
 
 const abi = [
  {
@@ -92,8 +94,31 @@ export default function EscrowTripPage() {
   const [status, setStatus] = useState({});
   const [admin, setAdmin] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false); // <-- add success state
+  const [fullPaid, setFullPaid] = useState(0);
+  const [isFunded, setIsFunded] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
   const navigate = useNavigate();
-  const { communityId } = useParams();
+  const { communityId: paramCommunityId } = useParams();
+  const location = useLocation();
+  const communityId = location.state?.communityId || paramCommunityId;
+  const estimatedCost = parseFloat(location.state?.estimatedCost || 0);
+  const joinPaid = parseFloat(location.state?.joinPaid || 0);
+  // Fetch escrow contract balance for the community
+  const [escrowBalance, setEscrowBalance] = useState(0);
+  useEffect(() => {
+    const fetchEscrowBalance = async () => {
+      if (!contract) return;
+      try {
+        const balance = await contract.getBalance();
+        setEscrowBalance(parseFloat(ethers.utils.formatEther(balance)));
+      } catch (err) {
+        setEscrowBalance(0);
+      }
+    };
+    fetchEscrowBalance();
+  }, [contract]);
+  const remaining = Math.max(estimatedCost - escrowBalance, 0).toFixed(4);
 
   useEffect(() => {
     const init = async () => {
@@ -106,15 +131,28 @@ export default function EscrowTripPage() {
         const contractInstance = new ethers.Contract(escrowAddress, abi, signer);
         setContract(contractInstance);
         setAccount(user);
-        // Fetch cost from contract
-        const cost = await contractInstance.amount();
-        setEthAmount(ethers.utils.formatEther(cost));
+        // Remove setEthAmount(remaining) from useEffect/init
+        // Use 'remaining' directly in the input and deposit logic
         fetchStatus(contractInstance);
+        // Listen for fullPaidMembers for this community and user
+        if (communityId && user) {
+          const communityRef = doc(db, "communities", communityId);
+          const unsub = onSnapshot(communityRef, (snap) => {
+            if (snap.exists()) {
+              const fullPaidMembers = snap.data().fullPaidMembers || {};
+              const paid = parseFloat(fullPaidMembers[user] || 0);
+              setFullPaid(paid);
+              setIsFunded(paid >= estimatedCost);
+            }
+          });
+          return () => unsub();
+        }
       } catch (err) {
         console.error("Wallet connection failed:", err);
       }
     };
     init();
+    // eslint-disable-next-line
   }, []);
 
   const fetchStatus = async (c = contract) => {
@@ -128,32 +166,61 @@ export default function EscrowTripPage() {
         isReleased,
         balance: ethers.utils.formatEther(balance),
       });
-      // If funded, redirect to community page
-      if (isFunded && communityId) {
-        setTimeout(() => navigate(`/community/${communityId}`), 1500);
-      }
+      // Remove or increase the redirect delay
+      // if (isFunded && communityId) {
+      //   setTimeout(() => navigate(`/community/${communityId}`), 1500);
+      // }
     } catch (err) {
       console.error("Error fetching contract data:", err);
     }
   };
 
   const deposit = async () => {
-    if (!ethAmount || isNaN(ethAmount)) return alert("Enter valid amount");
+    if (!remaining || isNaN(remaining)) return alert("Enter valid amount");
     if (!contract) {
       console.error('Contract not initialized');
       return;
     }
+    // Check if already funded
+    const funded = await contract.isFunded();
+    if (funded) {
+      setErrorMsg("You have already funded this trip. No further payment is required.");
+      return;
+    }
+    if (isFunded) {
+      setErrorMsg("You have already funded this trip. No further payment is required.");
+      return;
+    }
     try {
       setLoading(true);
+      setErrorMsg("");
       const tx = await contract.deposit({
-        value: ethers.utils.parseEther(ethAmount),
+        value: ethers.utils.parseEther(remaining),
       });
       await tx.wait();
-      alert("Funds deposited!");
+      // After successful deposit, update fullPaidMembers in Firestore
+      if (communityId && account) {
+        const communityRef = doc(db, "communities", communityId);
+        const snap = await getDoc(communityRef);
+        let fullPaidMembers = {};
+        if (snap.exists()) {
+          fullPaidMembers = snap.data().fullPaidMembers || {};
+        }
+        await updateDoc(communityRef, {
+          fullPaidMembers: { ...fullPaidMembers, [account]: (parseFloat(fullPaidMembers[account] || 0) + parseFloat(remaining) + joinPaid).toString() },
+        });
+      }
+      setSuccess(true);
       fetchStatus();
+      // Show success alert and redirect
+      setTimeout(() => navigate(`/community/${communityId}`), 1500);
     } catch (err) {
       console.error(err);
-      alert("Deposit failed.");
+      if (err?.error?.message?.includes("Already funded") || (err?.reason && err.reason.includes("Already funded"))) {
+        setErrorMsg("You have already funded this trip. No further payment is required.");
+      } else {
+        setErrorMsg("Deposit failed. " + (err?.reason || err?.message || ""));
+      }
     } finally {
       setLoading(false);
     }
@@ -200,53 +267,39 @@ export default function EscrowTripPage() {
           </p>
 
           <div className="mt-4">
+            <div className="mb-2 text-gray-700">Joining Amount Paid: <span className="font-bold">{joinPaid} ETH</span></div>
             <input
               type="number"
-              value={ethAmount}
+              value={remaining}
               readOnly
               placeholder="Enter ETH amount"
               className="w-full p-3 border border-gray-300 rounded-lg mb-4 bg-gray-100 cursor-not-allowed"
             />
             <button
               onClick={deposit}
-              disabled={loading}
-              className={`w-full ${
-                loading ? "bg-indigo-400" : "bg-indigo-600 hover:bg-indigo-700"
-              } text-white py-3 rounded-lg font-semibold`}
+              disabled={loading || isFunded}
+              className={`w-full ${loading ? "bg-indigo-400" : isFunded ? "bg-gray-400" : "bg-indigo-600 hover:bg-indigo-700"} text-white py-3 rounded-lg font-semibold`}
             >
-              Pay for Trip (Lock in Escrow)
+              {isFunded ? "Already Funded" : `Pay Remaining (${remaining} ETH)`}
             </button>
+            {isFunded && (
+              <div className="text-green-600 font-semibold mt-2">You have already funded this trip. No further payment is required.</div>
+            )}
+            {errorMsg && <div className="text-red-600 font-semibold mt-2">{errorMsg}</div>}
           </div>
 
           <div className="mt-6 text-center">
             <p><strong>Status:</strong></p>
-            <p>🔐 Funded: {status.isFunded ? "Yes" : "No"}</p>
+            <p>🔐 Funded: {isFunded ? "Yes" : "No"}</p>
             <p>✅ Released: {status.isReleased ? "Yes" : "No"}</p>
-            <p>💰 Escrow Balance: {status.balance || 0} ETH</p>
+            <p>💰 Escrow Balance: {escrowBalance} ETH</p>
           </div>
 
-          {account.toLowerCase() === admin.toLowerCase() && (
-            <div className="mt-6 space-y-3">
-              <button
-                onClick={releaseFunds}
-                disabled={loading}
-                className={`w-full ${
-                  loading ? "bg-green-400" : "bg-green-600 hover:bg-green-700"
-                } text-white py-3 rounded-lg font-semibold`}
-              >
-                Release Funds to Trip Provider
-              </button>
-              <button
-                onClick={refund}
-                disabled={loading}
-                className={`w-full ${
-                  loading ? "bg-red-400" : "bg-red-600 hover:bg-red-700"
-                } text-white py-3 rounded-lg font-semibold`}
-              >
-                Refund to Payer
-              </button>
-            </div>
+          {success && (
+            <div className="text-green-600 font-bold text-lg mt-4">Payment successful! <button className="ml-2 px-4 py-2 bg-teal-600 text-white rounded" onClick={() => navigate(`/community/${communityId}`)}>Return to Community</button></div>
           )}
+
+          {/* Only show admin controls if needed */}
         </div>
       </div>
     </>

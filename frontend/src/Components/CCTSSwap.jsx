@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import Navbar from "./Navbar";
 
-const contractAddress = "0xeB3865a56e3EBeaF456Ff196C94A6c42fDE73EEb";
+const contractAddress = "0xeae78EAA187387D597Ce274564b4C42A6611Ad22";
 
 const abi = [
     "event SwapProposed(uint256 indexed swapId, address indexed proposerDAO, address indexed counterpartyDAO)",

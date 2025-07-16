@@ -3,7 +3,7 @@ import { ethers } from 'ethers'
 import vaultABI from '../utils/vaultABI'
 import Navbar from './Navbar'
 
-const CONTRACT_ADDRESS = "0xF40F5B5466DD0347071c5Ff51F8240df71Aa665f"
+const CONTRACT_ADDRESS = "0xa2B2F2b2812B3a80b2153B04f78178EB56F063aF"
 const BSC_TESTNET_RPCS = [
   'https://data-seed-prebsc-1-s1.binance.org:8545/',
   'https://data-seed-prebsc-2-s1.binance.org:8545/',
