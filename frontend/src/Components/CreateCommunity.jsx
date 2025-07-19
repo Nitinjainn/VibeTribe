@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc as firestoreDoc } from 'firebase/firestore';
 import { ethers } from 'ethers';
 import VibeTribeABI from '../abis/VibeTribe.json';
 
@@ -130,13 +130,39 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
         costEstimated, // AI-generated travel cost estimation
         members: [], // New field
         maxMembers, // New field
+        joinPaidMembers: {}, // Ensure per-community payment tracking
+        fullPaidMembers: {}, // Ensure per-community payment tracking
+        memberJoinTimestamps: {}, // (optional, for join time tracking)
       };
   
       // Store in Firebase
-      await addDoc(collection(db, 'communities'), newCommunity);
+      const docRef = await addDoc(collection(db, 'communities'), newCommunity);
       console.log('Community added to Firestore');
+
+      // Deploy Escrow contract (using ethers.js and MetaMask)
+      try {
+        if (window.ethereum) {
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const signer = provider.getSigner();
+          // Import ABI and bytecode
+          const escrowArtifact = await import('../abis/Escrow.json');
+          const factory = new ethers.ContractFactory(escrowArtifact.abi, escrowArtifact.bytecode, signer);
+          const userAddress = await signer.getAddress();
+          const escrowContract = await factory.deploy(userAddress); // Pass payee address
+          await escrowContract.deployed();
+          const escrowAddress = escrowContract.address;
+          console.log('Escrow contract deployed at:', escrowAddress);
+
+          // Update Firestore with escrowAddress
+          await updateDoc(firestoreDoc(db, 'communities', docRef.id), { escrowAddress });
+          console.log('Firestore updated with escrowAddress');
+        }
+      } catch (deployError) {
+        console.error('Error deploying Escrow contract:', deployError);
+        alert('Error deploying Escrow contract: ' + deployError.message);
+      }
   
-      // Store on Blockchain
+      // Store on Blockchain (VibeTribe contract)
       if (contract) {
         const tx = await contract.createCommunity(
           communityName,

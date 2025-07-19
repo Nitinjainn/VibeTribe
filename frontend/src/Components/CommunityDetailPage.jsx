@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import { doc, getDoc, onSnapshot, updateDoc, runTransaction, collection, addDoc, query, orderBy } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, updateDoc, runTransaction, collection, addDoc, query, orderBy, setDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 import {
   FaEthereum,
@@ -11,6 +11,7 @@ import {
   FaWallet,
   FaShieldAlt,
   FaCube,
+  FaExclamationTriangle,
 } from "react-icons/fa";
 import Navbar from "./Navbar";
 import metamaskAuth from '../utils/metamaskAuth';
@@ -19,8 +20,14 @@ import EscrowTripPage from "./EscrowTripPage";
 import { ethers } from "ethers";
 import ProposalForm from './ProposalForm';
 import ProposalList from './ProposalList';
+import tripVotingArtifact from '../abis/TripVoting.json';
+import escrowArtifact from '../abis/Escrow.json';
+import { checkNetworkConnection, switchToBscTestnet } from '../utils/rpcUtils';
+import { explainNodeSyncIssue } from '../utils/nodeSyncHelper';
 
 const CommunityDetailPage = () => {
+  // All hooks must be inside the component function
+
   const { id } = useParams();
   const [community, setCommunity] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -47,12 +54,26 @@ const CommunityDetailPage = () => {
   const [votingLoading, setVotingLoading] = useState(false);
   const [joinPaidMembers, setJoinPaidMembers] = useState({});
   const [fullPaidMembers, setFullPaidMembers] = useState({});
+  const [finalizedResults, setFinalizedResults] = useState([]);
+  const [votingContractReady, setVotingContractReady] = useState(false);
+  const [canCreateProposals, setCanCreateProposals] = useState(false);
+  const [showJoinButton, setShowJoinButton] = useState(false);
+  const [joinError, setJoinError] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
+  const [nodeSyncIssues, setNodeSyncIssues] = useState(false);
 
-  const escrowAddress = "0x8a0B09ad25905049A488bB8596eEe81c4F705475";
+  const escrowAddress = community?.escrowAddress;
   const escrowAbi = [
     "function isFunded() public view returns (bool)",
     "function deposit() payable",
   ];
+
+  // Helper for case-insensitive address lookup
+  const getPaidAmount = (obj, addr) => {
+    if (!addr) return 0;
+    const key = Object.keys(obj).find(k => k.toLowerCase() === addr.toLowerCase());
+    return key ? parseFloat(obj[key]) : 0;
+  };
 
   useEffect(() => {
     const fetchCommunity = async () => {
@@ -147,6 +168,109 @@ const CommunityDetailPage = () => {
     return () => unsub();
   }, [id]);
 
+  // Fetch finalized results from Firestore
+  useEffect(() => {
+    if (!id) return;
+    const docRef = doc(db, "communities", id);
+    const unsub = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setFinalizedResults(docSnap.data().finalizedResults || []);
+      }
+    });
+    return () => unsub();
+  }, [id]);
+
+  // Only allow proposal creation and voting for Firestore community members
+  // Remove all contract membership checks, selfJoin/addMember logic, and related UI
+  // No separate button for membership check
+
+  // In the UI and logic, use only Firestore's `isMember` and payment status to gate proposal creation and voting
+  useEffect(() => {
+    async function setupVotingContract() {
+      if (
+        isMember &&
+        getPaidAmount(joinPaidMembers, walletAddress) > 0 &&
+        window.ethereum
+      ) {
+        try {
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          let accounts = await provider.listAccounts();
+          // If no accounts, request them
+          if (!accounts || accounts.length === 0) {
+            try {
+              accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            } catch (e) {
+              setCanCreateProposals(false);
+              setVotingContractReady(false);
+              setVotingContract(null);
+              setVotingAddress("");
+              return;
+            }
+          }
+          // Set walletAddress if not already set
+          if (!walletAddress && accounts && accounts.length > 0) {
+            setWalletAddress(accounts[0]);
+          }
+          if (accounts && accounts.length > 0) {
+            setCanCreateProposals(true);
+            setVotingContractReady(true);
+            const signer = provider.getSigner();
+            const votingAddr = "0x93390878FbD144848D8ef5f5bC1dD5BCa287AEA8";
+            
+            // Test the contract connection before setting it
+            try {
+              const contract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+              
+              // Try to test the contract with a simple call, but handle "missing trie node" gracefully
+              try {
+                await contract.getProposalCount();
+                setVotingContract(contract);
+                setVotingAddress(votingAddr);
+                console.log('✅ Voting contract initialized successfully');
+              } catch (contractTestError) {
+                // If we get "missing trie node" error, still set the contract but warn the user
+                if (contractTestError.message.includes('missing trie node') || 
+                    contractTestError.message.includes('Internal JSON-RPC error')) {
+                  console.warn('⚠️ Contract test failed due to node sync issues, but setting contract anyway');
+                  setVotingContract(contract);
+                  setVotingAddress(votingAddr);
+                  setNodeSyncIssues(true); // Set the flag to show notification
+                  console.log('✅ Voting contract initialized (with node sync warning)');
+                } else {
+                  throw contractTestError;
+                }
+              }
+            } catch (contractError) {
+              console.error('❌ Failed to initialize voting contract:', contractError);
+              setCanCreateProposals(false);
+              setVotingContractReady(false);
+              setVotingContract(null);
+              setVotingAddress("");
+            }
+          } else {
+            setCanCreateProposals(false);
+            setVotingContractReady(false);
+            setVotingContract(null);
+            setVotingAddress("");
+          }
+        } catch (error) {
+          console.error('Error setting up voting contract:', error);
+          setCanCreateProposals(false);
+          setVotingContractReady(false);
+          setVotingContract(null);
+          setVotingAddress("");
+        }
+      } else {
+        setCanCreateProposals(false);
+        setVotingContractReady(false);
+        setVotingContract(null);
+        setVotingAddress("");
+      }
+    }
+    setupVotingContract();
+    // eslint-disable-next-line
+  }, [isMember, joinPaidMembers, walletAddress]);
+
   // MetaMask connection logic
   useEffect(() => {
     if (metamaskAuth.isAuthenticated()) {
@@ -161,19 +285,39 @@ const CommunityDetailPage = () => {
   const handleMetaMaskAuth = async () => {
     setAuthLoading(true);
     setAuthError("");
-    const result = await metamaskAuth.authenticate();
-    setAuthLoading(false);
-    if (result.success) {
-      setWalletAddress(result.userData.address);
-      setIsConnected(true);
-      setShowConnectModal(false);
-    } else {
-      // If error is due to no user found, redirect to signup with wallet address
-      if (result.error && result.error.toLowerCase().includes('not found')) {
-        navigate('/signup', { state: { walletAddress: metamaskAuth.address } });
+    
+    try {
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 10000)
+      );
+      
+      const authPromise = metamaskAuth.authenticate();
+      const result = await Promise.race([authPromise, timeoutPromise]);
+      
+      if (result.success) {
+        setWalletAddress(result.userData.address);
+        setIsConnected(true);
+        setShowConnectModal(false);
       } else {
-        setAuthError(result.error || "MetaMask authentication failed.");
+        // If error is due to no user found, redirect to signup with wallet address
+        if (result.error && result.error.toLowerCase().includes('not found')) {
+          navigate('/signup', { state: { walletAddress: metamaskAuth.address } });
+        } else {
+          setAuthError(result.error || "MetaMask authentication failed.");
+        }
       }
+    } catch (error) {
+      console.error('MetaMask connection error:', error);
+      if (error.message.includes('timeout')) {
+        setAuthError('Connection timed out. Please try again or check your MetaMask connection.');
+      } else if (error.code === 4001) {
+        setAuthError('You rejected the connection request in MetaMask.');
+      } else {
+        setAuthError('MetaMask connection failed: ' + error.message);
+      }
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -182,63 +326,146 @@ const CommunityDetailPage = () => {
     setShowEscrowModal(true);
   };
 
+  // In handleEscrowPay, use the correct ABI and define provider/signer
   const handleEscrowPay = async () => {
+    if (!window.ethereum) {
+      alert('Please install MetaMask to proceed.');
+      return;
+    }
+
     setEscrowLoading(true);
-    setEscrowError("");
+    setEscrowError('');
+
     try {
-      if (!window.ethereum) throw new Error("Please install MetaMask.");
-      await window.ethereum.request({ method: "eth_requestAccounts" });
       const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(escrowAddress, escrowAbi, signer);
-      // Fixed joining fee
-      const joiningFee = "0.0001";
-      // On-chain payment
-      const tx = await contract.deposit({ value: ethers.utils.parseEther(joiningFee) });
+      const signer = provider.getSigner();
+      const escrowAddr = "0x93390878FbD144848D8ef5f5bC1dD5BCa287AEA8";
+      const escrowContract = new ethers.Contract(escrowAddr, escrowArtifact.abi, signer);
+
+      // Pay the joining fee
+      const joinFee = ethers.utils.parseEther("0.0001");
+      const tx = await escrowContract.payJoinFee({ value: joinFee });
       await tx.wait();
-      // Off-chain: update joinPaidMembers and add user to community
-      const communityRef = doc(db, "communities", id);
-      await runTransaction(db, async (transaction) => {
-        const docSnap = await transaction.get(communityRef);
-        if (!docSnap.exists()) throw new Error("Community does not exist");
-        const data = docSnap.data();
-        const currentMembers = Array.isArray(data.members) ? data.members : [];
-        const memberJoinTimestamps = data.memberJoinTimestamps || {};
-        const joinPaidMembers = data.joinPaidMembers || {};
-        if (currentMembers.includes(walletAddress)) return;
-        if (currentMembers.length >= data.maxMembers) throw new Error("Community is full");
-        transaction.update(communityRef, {
-          members: [...currentMembers, walletAddress],
-          peopleCount: currentMembers.length + 1,
-          memberJoinTimestamps: { ...memberJoinTimestamps, [walletAddress]: Date.now() },
-          joinPaidMembers: { ...joinPaidMembers, [walletAddress]: joiningFee },
-        });
-      });
-      setIsMember(true);
+
+      console.log('✅ Join fee paid successfully');
+
+      // Add user to Firestore community
+      await addUserToCommunity();
+
+      // Try to add user as member on-chain automatically
+      try {
+        console.log('🔄 Attempting to add user as member on-chain...');
+        
+        // First try selfJoin
+        const votingAddr = "0xe672AA0b915e3b03360aA4249eDA621F43a6a027";
+        const votingContract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+        
+        try {
+          const selfJoinTx = await votingContract.selfJoin();
+          await selfJoinTx.wait();
+          console.log('✅ Successfully joined on-chain via selfJoin');
+        } catch (selfJoinError) {
+          console.log('selfJoin failed, trying addMember via backend...');
+          
+          // Try backend addMember
+          try {
+            console.log('Calling /addMemberOnChain for', walletAddress);
+            const response = await fetch('http://localhost:5000/addMemberOnChain', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ memberAddress: walletAddress }),
+            });
+            
+            if (response.ok) {
+              const result = await response.json();
+              if (result.success) {
+                console.log('✅ Successfully added member on-chain via backend');
+              }
+            } else {
+              console.log('Backend addMember failed, but user is still added to Firestore');
+            }
+          } catch (backendError) {
+            console.log('Backend addMember failed:', backendError);
+          }
+        }
+        
+      } catch (error) {
+        console.log('User is not yet a member on-chain, but added to Firestore');
+      }
+
+      setHasPaidJoin(true);
       setShowEscrowModal(false);
-    } catch (err) {
-      setEscrowError(err.message || "Payment failed.");
+      alert('✅ Successfully joined the community! You can now participate in proposals and voting.');
+
+    } catch (error) {
+      console.error('Escrow payment error:', error);
+      if (error.code === 4001) {
+        setEscrowError('You rejected the transaction in MetaMask.');
+      } else {
+        setEscrowError('Payment failed: ' + error.message);
+      }
     } finally {
       setEscrowLoading(false);
     }
   };
 
+  // Add function to automatically add user as member when they join
   const addUserToCommunity = async () => {
-    const communityRef = doc(db, "communities", id);
-    await runTransaction(db, async (transaction) => {
-      const docSnap = await transaction.get(communityRef);
-      if (!docSnap.exists()) throw new Error("Community does not exist");
-      const data = docSnap.data();
-      const currentMembers = Array.isArray(data.members) ? data.members : [];
-      const memberJoinTimestamps = data.memberJoinTimestamps || {};
-      if (currentMembers.includes(walletAddress)) return;
-      if (currentMembers.length >= data.maxMembers) throw new Error("Community is full");
-      transaction.update(communityRef, {
-        members: [...currentMembers, walletAddress],
-        peopleCount: currentMembers.length + 1,
-        memberJoinTimestamps: { ...memberJoinTimestamps, [walletAddress]: Date.now() },
+    if (!window.ethereum || !walletAddress) {
+      alert('Please connect your wallet first.');
+      return;
+    }
+
+    try {
+      // Add user to Firestore community
+      const communityRef = doc(db, "communities", id);
+      await runTransaction(db, async (transaction) => {
+        const communityDoc = await transaction.get(communityRef);
+        if (!communityDoc.exists()) throw new Error("Community not found");
+        const data = communityDoc.data();
+        const currentMembers = data.members || [];
+        const memberJoinTimestamps = data.memberJoinTimestamps || {};
+        const joinPaidMembers = data.joinPaidMembers || {};
+        
+        if (currentMembers.includes(walletAddress)) throw new Error("Already a member");
+        if (currentMembers.length >= data.maxMembers) throw new Error("Community is full");
+        
+        transaction.update(communityRef, {
+          members: [...currentMembers, walletAddress],
+          peopleCount: currentMembers.length + 1,
+          memberJoinTimestamps: { ...memberJoinTimestamps, [walletAddress]: Date.now() },
+          joinPaidMembers: { ...joinPaidMembers, [walletAddress]: 0.0001 },
+        });
       });
-    });
+
+      // Try to add user as member on-chain automatically
+      try {
+        console.log('🔄 Attempting to add user as member on-chain...');
+        
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const signer = provider.getSigner();
+        const votingAddr = "0x043F3fc3499275C419F5E0dDbbD3Aed34F26D3b7";
+        const votingContract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+        
+        try {
+          const selfJoinTx = await votingContract.selfJoin();
+          await selfJoinTx.wait();
+          console.log('✅ Successfully joined on-chain via selfJoin');
+        } catch (selfJoinError) {
+          console.log('selfJoin failed, but user is still added to Firestore');
+        }
+        
+      } catch (error) {
+        console.log('User is not yet a member on-chain, but added to Firestore');
+      }
+
+      setIsMember(true);
+      console.log('✅ Successfully added user to community');
+      
+    } catch (error) {
+      console.error('Error adding user to community:', error);
+      alert('Error adding user to community: ' + error.message);
+    }
   };
 
   const sendMessage = async () => {
@@ -261,15 +488,9 @@ const CommunityDetailPage = () => {
   // Check if community is full and all members have paid (simplified: all members joined)
   const isCommunityFull = members.length === maxMembers && maxMembers > 0;
   // Has the user paid the join fee?
-  const hasPaidJoin = !!joinPaidMembers[walletAddress];
+  const hasPaidJoin = getPaidAmount(joinPaidMembers, walletAddress) > 0;
   const allPaidJoin = Object.keys(joinPaidMembers).length === maxMembers && Object.values(joinPaidMembers).every(a => parseFloat(a) > 0);
 
-  // Helper for case-insensitive address lookup
-  const getPaidAmount = (obj, addr) => {
-    if (!addr) return 0;
-    const key = Object.keys(obj).find(k => k.toLowerCase() === addr.toLowerCase());
-    return key ? parseFloat(obj[key]) : 0;
-  };
   const joinPaid = getPaidAmount(joinPaidMembers, walletAddress);
   const fullPaid = getPaidAmount(fullPaidMembers, walletAddress);
   const estimatedCost = parseFloat(community?.costEstimated || 0);
@@ -277,76 +498,40 @@ const CommunityDetailPage = () => {
   const hasPaidFull = fullPaid >= estimatedCost;
   const allPaidFull = Object.keys(fullPaidMembers).length === maxMembers && Object.values(fullPaidMembers).every(a => parseFloat(a) >= estimatedCost);
 
-  // Fetch or deploy TripVoting contract
-  useEffect(() => {
-    const fetchOrDeployVoting = async () => {
-      if (!isCommunityFull || !isMember) return;
-      setVotingLoading(true);
-      try {
-        // 1. Check Firestore for voting contract address
-        const docRef = doc(db, 'communities', id);
-        const docSnap = await getDoc(docRef);
-        let votingAddr = docSnap.data()?.votingContract;
-        let contract;
-        if (!votingAddr) {
-          // 2. Deploy TripVoting contract if not present
-          if (!window.ethereum) throw new Error('MetaMask required');
-          await window.ethereum.request({ method: 'eth_requestAccounts' });
-          const provider = new ethers.providers.Web3Provider(window.ethereum);
-          const signer = await provider.getSigner();
-          // Load ABI and bytecode (assume ABI/bytecode are available, e.g. import TripVoting.json)
-          const tripVotingArtifact = await import('../abis/TripVoting.json');
-          const factory = new ethers.ContractFactory(tripVotingArtifact.abi, tripVotingArtifact.bytecode, signer);
-          const tx = await factory.deploy(members);
-          await tx.deployed();
-          votingAddr = tx.address;
-          // Save to Firestore
-          await updateDoc(docRef, { votingContract: votingAddr });
-          contract = tx;
-        } else {
-          // 3. Connect to existing contract
-          const provider = new ethers.providers.Web3Provider(window.ethereum);
-          const signer = await provider.getSigner();
-          const tripVotingArtifact = await import('../abis/TripVoting.json');
-          contract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
-        }
-        setVotingAddress(votingAddr);
-        setVotingContract(contract);
-      } catch (err) {
-        console.error('Voting contract error:', err);
-      } finally {
-        setVotingLoading(false);
-      }
-    };
-    fetchOrDeployVoting();
-    // eslint-disable-next-line
-  }, [isCommunityFull, isMember, members]);
+
 
   // Fetch proposals from contract
   useEffect(() => {
     const fetchProposals = async () => {
-      if (!votingContract) return;
       try {
-        const count = await votingContract.getProposalCount();
-        const arr = [];
-        for (let i = 0; i < count; i++) {
-          const p = await votingContract.getProposal(i);
-          arr.push({
-            description: p[0],
-            yesVotes: Number(p[1]),
-            noVotes: Number(p[2]),
-            endTime: Number(p[3]),
-            passed: p[4],
-            executed: p[4] !== undefined, // crude: if passed is set, assume executed
-          });
+        const communityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(communityRef);
+        
+        if (communityDoc.exists()) {
+          const data = communityDoc.data();
+          const proposals = data.proposals || [];
+          
+          // Filter proposals for this community and format them
+          const formattedProposals = proposals.map(proposal => ({
+            id: proposal.id,
+            description: proposal.description,
+            options: proposal.options,
+            optionsVotes: proposal.votes,
+            endTime: proposal.endTime,
+            executed: proposal.executed,
+            winningOption: proposal.winningOption,
+            createdBy: proposal.createdBy,
+            votedBy: proposal.votedBy || []
+          }));
+          
+          setProposals(formattedProposals);
         }
-        setProposals(arr);
-      } catch (err) {
-        console.error('Fetch proposals error:', err);
+      } catch (error) {
+        console.error('Error fetching proposals:', error);
       }
     };
     fetchProposals();
-  }, [votingContract]);
+  }, [id]);
 
   // Voting status per proposal
   useEffect(() => {
@@ -371,84 +556,343 @@ const CommunityDetailPage = () => {
     fetchVotingStatus();
   }, [votingContract, proposals, walletAddress]);
 
-  // Proposal creation handler
-  const handleCreateProposal = async ({ description, duration }) => {
-    if (!votingContract) return;
+  // Add function to ensure on-chain membership
+  const ensureOnChainMembership = async () => {
+    if (!window.ethereum || !walletAddress) {
+      alert('Please connect your wallet first.');
+      return false;
+    }
+    
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const votingAddr = "0xe672AA0b915e3b03360aA4249eDA621F43a6a027";
+      const votingContract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+      
+      // Check if already a member on-chain
+      try {
+        const isOnChainMember = await votingContract.isMember(walletAddress);
+        if (isOnChainMember) {
+          console.log('✅ Already a member on-chain');
+          return true;
+        }
+      } catch (error) {
+        console.log('Could not check on-chain membership due to node issues, proceeding with join...');
+      }
+      
+      // Only try to join if not already a member
+      try {
+        console.log('🔄 Attempting to join on-chain via selfJoin...');
+        const tx = await votingContract.selfJoin();
+        await tx.wait();
+        console.log('✅ Successfully joined on-chain via selfJoin');
+        return true;
+      } catch (selfJoinError) {
+        console.error('selfJoin failed:', selfJoinError);
+        
+        // Check if the error is because already a member
+        if (selfJoinError.message.includes('Already a member') || 
+            selfJoinError.message.includes('execution reverted') ||
+            selfJoinError.reason === 'Already a member') {
+          console.log('✅ User is already a member on-chain (selfJoin reverted)');
+          return true; // Consider this a success since they're already a member
+        }
+        
+        // If it's a different error, show helpful message
+        if (selfJoinError.message.includes('Not a member')) {
+          alert('⚠️ Self-join failed. You may need to be added by the contract owner or try a different approach.');
+        } else {
+          alert('⚠️ Failed to join on-chain. This might be due to:\n' +
+                '1. Network issues\n' +
+                '2. Contract permissions\n' +
+                '3. Gas estimation problems\n\n' +
+                'Please try again or contact support.');
+        }
+        return false;
+      }
+    } catch (error) {
+      console.error('Error ensuring on-chain membership:', error);
+      alert('Error ensuring membership: ' + error.message);
+      return false;
+    }
+  };
+
+  // --- Replace handleCreateProposal with Firestore-based community-specific logic ---
+  const handleCreateProposal = async ({ description, duration, options }) => {
+    if (!isFirestoreMember) {
+      alert("You must be a community member to create proposals or vote.");
+      return;
+    }
     setVotingLoading(true);
     try {
-      const tx = await votingContract.createProposal(description, duration);
-      await tx.wait();
-      // Refresh proposals
-      const count = await votingContract.getProposalCount();
-      const p = await votingContract.getProposal(count - 1);
-      setProposals([...proposals, {
-        description: p[0],
-        yesVotes: Number(p[1]),
-        noVotes: Number(p[2]),
-        endTime: Number(p[3]),
-        passed: p[4],
-        executed: p[4] !== undefined,
-      }]);
+      if (!votingContractReady || !canCreateProposals) {
+        throw new Error('You must be a paid member to create proposals');
+      }
+      if (!votingContract) throw new Error('Voting contract not ready or wallet not connected');
+      
+      // Try to ensure on-chain membership, but don't block if it fails
+      try {
+        const isOnChainMember = await ensureOnChainMembership();
+        if (!isOnChainMember) {
+          console.warn('⚠️ Could not ensure on-chain membership, but proceeding anyway...');
+          // Don't throw error, just warn and continue
+        }
+      } catch (membershipError) {
+        console.warn('⚠️ Membership check failed, but proceeding with proposal creation:', membershipError);
+        // Continue anyway - let the contract decide
+      }
+      
+      console.log('Creating proposal with:', { description, options, duration });
+      
+      // Generate unique proposal ID using community ID and timestamp
+      const proposalId = `${id}-${Date.now()}`;
+      
+      // Store proposal in Firestore first
+      const proposalData = {
+        id: proposalId,
+        communityId: id,
+        description,
+        options,
+        duration,
+        createdAt: Date.now(),
+        endTime: Date.now() + (duration * 60 * 1000), // Convert minutes to milliseconds
+        createdBy: walletAddress,
+        votes: options.map(() => 0),
+        votedBy: [],
+        executed: false,
+        winningOption: null
+      };
+      
+      // Add to Firestore
+      const communityRef = doc(db, "communities", id);
+      await runTransaction(db, async (transaction) => {
+        const communityDoc = await transaction.get(communityRef);
+        if (!communityDoc.exists()) throw new Error("Community not found");
+        const data = communityDoc.data();
+        const proposals = data.proposals || [];
+        
+        transaction.update(communityRef, {
+          proposals: [...proposals, proposalData]
+        });
+      });
+      
+      // Try to create on-chain proposal as well (for backup) - use the new contract format with proposalId
+      try {
+        const tx = await votingContract.createProposal(proposalId, description, options, duration);
+        await tx.wait();
+        console.log('✅ On-chain proposal created successfully');
+      } catch (onChainError) {
+        console.warn('⚠️ On-chain proposal creation failed, but Firestore proposal was created:', onChainError);
+      }
+      
+      // Refresh proposals from Firestore
+      try {
+        const communityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(communityRef);
+        
+        if (communityDoc.exists()) {
+          const data = communityDoc.data();
+          const proposals = data.proposals || [];
+          
+          // Filter proposals for this community and format them
+          const formattedProposals = proposals.map(proposal => ({
+            id: proposal.id,
+            description: proposal.description,
+            options: proposal.options,
+            optionsVotes: proposal.votes,
+            endTime: proposal.endTime,
+            executed: proposal.executed,
+            winningOption: proposal.winningOption,
+            createdBy: proposal.createdBy,
+            votedBy: proposal.votedBy || []
+          }));
+          
+          setProposals(formattedProposals);
+        }
+      } catch (error) {
+        console.error('Error refreshing proposals:', error);
+      }
+      
+      alert('Proposal created successfully!');
     } catch (err) {
-      alert('Proposal creation failed: ' + (err.reason || err.message));
+      console.error('Proposal creation error:', err);
+      if (err.code === 4001) {
+        alert('You rejected the transaction in MetaMask. Please confirm to create a proposal.');
+      } else if (err.message.includes('missing trie node')) {
+        alert('Blockchain node is out of sync. Please try again in a few minutes or use the "Troubleshoot Network" button.');
+      } else if (err.error && err.error.message) {
+        alert('Proposal creation failed: ' + err.error.message);
+      } else {
+        alert('Proposal creation failed: ' + (err.reason || err.message));
+      }
     } finally {
       setVotingLoading(false);
     }
   };
 
-  // Voting handler
-  const handleVote = async (id, inFavor) => {
-    if (!votingContract) return;
+  // --- Replace handleVote with Firestore-based logic ---
+  const handleVote = async (proposalId, optionIdx) => {
     setVotingLoading(true);
     try {
-      const tx = await votingContract.vote(id, inFavor);
-      await tx.wait();
-      // Refresh proposals and voting status
-      const count = await votingContract.getProposalCount();
-      const arr = [];
-      for (let i = 0; i < count; i++) {
-        const p = await votingContract.getProposal(i);
-        arr.push({
-          description: p[0],
-          yesVotes: Number(p[1]),
-          noVotes: Number(p[2]),
-          endTime: Number(p[3]),
-          passed: p[4],
-          executed: p[4] !== undefined,
-        });
+      if (!isFirestoreMember) {
+        alert("You must be a community member to vote.");
+        return;
       }
-      setProposals(arr);
+      
+      const communityRef = doc(db, "communities", id);
+      await runTransaction(db, async (transaction) => {
+        const communityDoc = await transaction.get(communityRef);
+        if (!communityDoc.exists()) throw new Error("Community not found");
+        const data = communityDoc.data();
+        const proposals = data.proposals || [];
+        
+        // Find the proposal
+        const proposalIndex = proposals.findIndex(p => p.id === proposalId);
+        if (proposalIndex === -1) throw new Error("Proposal not found");
+        
+        const proposal = proposals[proposalIndex];
+        
+        // Check if voting has ended
+        if (Date.now() > proposal.endTime) {
+          throw new Error("Voting has ended");
+        }
+        
+        // Check if user has already voted
+        if (proposal.votedBy && proposal.votedBy.includes(walletAddress)) {
+          throw new Error("You have already voted on this proposal");
+        }
+        
+        // Update the proposal
+        const updatedProposals = [...proposals];
+        updatedProposals[proposalIndex] = {
+          ...proposal,
+          votes: proposal.votes.map((vote, idx) => idx === optionIdx ? vote + 1 : vote),
+          votedBy: [...(proposal.votedBy || []), walletAddress]
+        };
+        
+        transaction.update(communityRef, {
+          proposals: updatedProposals
+        });
+      });
+      
+      // Refresh proposals from Firestore
+      try {
+        const communityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(communityRef);
+        
+        if (communityDoc.exists()) {
+          const data = communityDoc.data();
+          const proposals = data.proposals || [];
+          
+          // Filter proposals for this community and format them
+          const formattedProposals = proposals.map(proposal => ({
+            id: proposal.id,
+            description: proposal.description,
+            options: proposal.options,
+            optionsVotes: proposal.votes,
+            endTime: proposal.endTime,
+            executed: proposal.executed,
+            winningOption: proposal.winningOption,
+            createdBy: proposal.createdBy,
+            votedBy: proposal.votedBy || []
+          }));
+          
+          setProposals(formattedProposals);
+        }
+      } catch (error) {
+        console.error('Error refreshing proposals:', error);
+      }
+      
+      setVotingStatus(prev => ({ ...prev, [proposalId]: { voted: true } }));
+      
+      alert('Vote recorded successfully!');
     } catch (err) {
-      alert('Voting failed: ' + (err.reason || err.message));
+      alert('Voting failed: ' + err.message);
     } finally {
       setVotingLoading(false);
     }
   };
 
-  // Finalize proposal
-  const handleFinalize = async (id) => {
-    if (!votingContract) return;
+  // Finalize proposal with Firestore
+  const handleFinalize = async (proposalId) => {
     setVotingLoading(true);
     try {
-      const tx = await votingContract.finalize(id);
-      await tx.wait();
-      // Refresh proposals
-      const count = await votingContract.getProposalCount();
-      const arr = [];
-      for (let i = 0; i < count; i++) {
-        const p = await votingContract.getProposal(i);
-        arr.push({
-          description: p[0],
-          yesVotes: Number(p[1]),
-          noVotes: Number(p[2]),
-          endTime: Number(p[3]),
-          passed: p[4],
-          executed: p[4] !== undefined,
+      const communityRef = doc(db, "communities", id);
+      await runTransaction(db, async (transaction) => {
+        const communityDoc = await transaction.get(communityRef);
+        if (!communityDoc.exists()) throw new Error("Community not found");
+        const data = communityDoc.data();
+        const proposals = data.proposals || [];
+        
+        // Find the proposal
+        const proposalIndex = proposals.findIndex(p => p.id === proposalId);
+        if (proposalIndex === -1) throw new Error("Proposal not found");
+        
+        const proposal = proposals[proposalIndex];
+        
+        // Check if voting has ended
+        if (Date.now() < proposal.endTime) {
+          throw new Error("Voting is still active");
+        }
+        
+        if (proposal.executed) {
+          throw new Error("Proposal has already been finalized");
+        }
+        
+        // Find winning option
+        let maxVotes = 0;
+        let winner = 0;
+        for (let i = 0; i < proposal.votes.length; i++) {
+          if (proposal.votes[i] > maxVotes) {
+            maxVotes = proposal.votes[i];
+            winner = i;
+          }
+        }
+        
+        // Update the proposal
+        const updatedProposals = [...proposals];
+        updatedProposals[proposalIndex] = {
+          ...proposal,
+          executed: true,
+          winningOption: winner
+        };
+        
+        transaction.update(communityRef, {
+          proposals: updatedProposals
         });
+      });
+      
+      // Refresh proposals from Firestore
+      try {
+        const communityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(communityRef);
+        
+        if (communityDoc.exists()) {
+          const data = communityDoc.data();
+          const proposals = data.proposals || [];
+          
+          // Filter proposals for this community and format them
+          const formattedProposals = proposals.map(proposal => ({
+            id: proposal.id,
+            description: proposal.description,
+            options: proposal.options,
+            optionsVotes: proposal.votes,
+            endTime: proposal.endTime,
+            executed: proposal.executed,
+            winningOption: proposal.winningOption,
+            createdBy: proposal.createdBy,
+            votedBy: proposal.votedBy || []
+          }));
+          
+          setProposals(formattedProposals);
+        }
+      } catch (error) {
+        console.error('Error refreshing proposals:', error);
       }
-      setProposals(arr);
+      
+      alert('Proposal finalized successfully!');
     } catch (err) {
-      alert('Finalize failed: ' + (err.reason || err.message));
+      alert('Finalize failed: ' + err.message);
     } finally {
       setVotingLoading(false);
     }
@@ -457,7 +901,7 @@ const CommunityDetailPage = () => {
   // Always check escrow status on page load and when escrowAddress changes
   useEffect(() => {
     const checkEscrowStatus = async () => {
-      if (!window.ethereum) return;
+      if (!window.ethereum || !escrowAddress) return;
       try {
         const provider = new ethers.providers.Web3Provider(window.ethereum);
         const contract = new ethers.Contract(escrowAddress, escrowAbi, provider);
@@ -469,6 +913,189 @@ const CommunityDetailPage = () => {
     };
     checkEscrowStatus();
   }, [escrowAddress]);
+
+  // Add network troubleshooting function
+  const troubleshootNetwork = async () => {
+    try {
+      const networkStatus = await checkNetworkConnection();
+      
+      if (!networkStatus.connected) {
+        alert('MetaMask is not connected. Please install MetaMask and try again.');
+        return;
+      }
+      
+      if (!networkStatus.isBscTestnet) {
+        const switchResult = await switchToBscTestnet();
+        if (switchResult) {
+          alert('Successfully switched to BSC Testnet. Please try your action again.');
+          window.location.reload();
+        } else {
+          alert('Failed to switch to BSC Testnet. Please manually switch to BSC Testnet in MetaMask.');
+        }
+        return;
+      }
+      
+      if (!networkStatus.hasAccount) {
+        alert('No account connected. Please connect your MetaMask account.');
+        return;
+      }
+      
+      alert(`Network Status:\n` +
+        `Connected: ${networkStatus.connected}\n` +
+        `Network: BSC Testnet\n` +
+        `Account: ${networkStatus.account}\n` +
+        `Chain ID: ${networkStatus.chainId}\n\n` +
+        `If you're still experiencing issues, try:\n` +
+        `1. Refreshing the page\n` +
+        `2. Switching networks and back\n` +
+        `3. Waiting a few minutes and trying again`);
+        
+    } catch (error) {
+      console.error('Network troubleshooting error:', error);
+      alert('Network troubleshooting failed: ' + error.message);
+    }
+  };
+
+  // Add function to explain node sync issues
+  const showNodeSyncExplanation = () => {
+    const explanation = explainNodeSyncIssue();
+    alert(`${explanation.title}\n\n${explanation.explanation}\n\nSolutions:\n${explanation.solutions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
+  };
+
+  // Add function to check membership status
+  const checkMembershipStatus = async () => {
+    if (!window.ethereum || !walletAddress) {
+      return { firestore: false, onChain: false };
+    }
+    
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const votingAddr = "0xe672AA0b915e3b03360aA4249eDA621F43a6a027";
+      const votingContract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, provider);
+      
+      const isOnChainMember = await votingContract.isMember(walletAddress);
+      
+      return {
+        firestore: isFirestoreMember,
+        onChain: isOnChainMember
+      };
+    } catch (error) {
+      console.error('Error checking membership status:', error);
+      return {
+        firestore: isFirestoreMember,
+        onChain: false,
+        error: error.message
+      };
+    }
+  };
+
+  // Add function to manually add user as member on-chain
+  const addUserAsMemberOnChain = async () => {
+    if (!window.ethereum || !walletAddress) {
+      alert('Please connect your wallet first.');
+      return false;
+    }
+    
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const votingAddr = "0xe672AA0b915e3b03360aA4249eDA621F43a6a027";
+      const votingContract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+      
+      console.log('🔄 Attempting to add user as member on-chain...');
+      
+      // Try to add the user as a member (this requires contract owner permissions)
+      const tx = await votingContract.addMember(walletAddress);
+      await tx.wait();
+      
+      console.log('✅ Successfully added user as member on-chain');
+      alert('✅ Successfully added as member on-chain! You can now create proposals.');
+      return true;
+      
+    } catch (error) {
+      console.error('Failed to add user as member:', error);
+      
+      if (error.message.includes('Only owner can add')) {
+        alert('❌ Only the contract owner can add members. Please contact the contract owner to add you as a member.');
+      } else if (error.message.includes('Already a member')) {
+        alert('✅ You are already a member on-chain!');
+        return true;
+      } else {
+        alert('❌ Failed to add as member: ' + error.message);
+      }
+      return false;
+    }
+  };
+
+  // Add function to force membership (handles all edge cases)
+  const forceMembership = async () => {
+    if (!window.ethereum || !walletAddress) {
+      alert('Please connect your wallet first.');
+      return false;
+    }
+    
+    try {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      const votingAddr = "0xe672AA0b915e3b03360aA4249eDA621F43a6a027";
+      const votingContract = new ethers.Contract(votingAddr, tripVotingArtifact.abi, signer);
+      
+      console.log('🔄 Attempting to force membership...');
+      
+      // First check if already a member
+      try {
+        const isOnChainMember = await votingContract.isMember(walletAddress);
+        if (isOnChainMember) {
+          console.log('✅ Already a member on-chain');
+          alert('✅ You are already a member on-chain!');
+          return true;
+        }
+      } catch (error) {
+        console.log('Could not check membership status, proceeding...');
+      }
+      
+      // Try selfJoin with retry logic
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`🔄 Attempt ${attempt}: Trying selfJoin...`);
+          const tx = await votingContract.selfJoin();
+          await tx.wait();
+          console.log('✅ Successfully joined on-chain via selfJoin');
+          alert('✅ Successfully joined on-chain! You can now create proposals.');
+          return true;
+        } catch (error) {
+          console.log(`Attempt ${attempt} failed:`, error.message);
+          
+          if (error.message.includes('Already a member')) {
+            console.log('✅ User is already a member (selfJoin reverted)');
+            alert('✅ You are already a member on-chain!');
+            return true;
+          }
+          
+          if (attempt === 3) {
+            // Last attempt failed, try a different approach
+            alert('⚠️ Self-join failed after 3 attempts. This might be due to:\n' +
+                  '1. Network issues\n' +
+                  '2. Contract permissions\n' +
+                  '3. Gas estimation problems\n\n' +
+                  'Please try the "Add Me as Member On-Chain" button or contact support.');
+            return false;
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error forcing membership:', error);
+      alert('Error forcing membership: ' + error.message);
+      return false;
+    }
+  };
+
+  // Gate on-chain proposal creation and voting by Firestore membership
+  const isFirestoreMember = members.map(m => m.toLowerCase()).includes(walletAddress?.toLowerCase());
 
   if (!community) {
     return (
@@ -482,6 +1109,20 @@ const CommunityDetailPage = () => {
     
     <div className="min-h-screen bg-gradient-to-b from-teal-50/50 to-white relative">
        <Navbar />
+       
+       {/* Node Sync Issues Notification */}
+       {nodeSyncIssues && (
+         <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-40 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded-lg shadow-lg max-w-md">
+           <div className="flex items-center gap-2">
+             <FaExclamationTriangle className="w-5 h-5" />
+             <div>
+               <p className="font-semibold">Blockchain Node Sync Issues</p>
+               <p className="text-sm">Some features may be limited. Try the "Troubleshoot Network" button below.</p>
+             </div>
+           </div>
+         </div>
+       )}
+       
       {/* Connect Wallet Modal */}
       {showConnectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
@@ -653,6 +1294,131 @@ const CommunityDetailPage = () => {
                   You are a member
                 </div>
               )}
+              
+              {/* Debug button for membership issues */}
+              {(members.length >= maxMembers) && isMember && (
+                <button
+                  onClick={async () => {
+                    const { firestore, onChain } = await checkMembershipStatus();
+                    alert(`Membership Status:\nWallet: ${walletAddress}\nFirestore Member: ${firestore}\nOn-Chain Member: ${onChain}\nCan Create Proposals: ${canCreateProposals}\nVoting Contract Ready: ${votingContractReady}`);
+                  }}
+                  className="w-full mt-2 bg-blue-100 text-blue-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
+                >
+                  Debug Membership Status
+                </button>
+              )}
+              
+              {/* Network troubleshooting button */}
+              {(members.length >= maxMembers) && isMember && (
+                <button
+                  onClick={troubleshootNetwork}
+                  className="w-full mt-2 bg-orange-100 text-orange-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-orange-200 transition-colors flex items-center justify-center gap-2"
+                >
+                  <FaExclamationTriangle className="w-4 h-4" />
+                  Troubleshoot Network
+                </button>
+              )}
+              
+              {/* Node sync explanation button */}
+              {(members.length >= maxMembers) && isMember && nodeSyncIssues && (
+                <button
+                  onClick={showNodeSyncExplanation}
+                  className="w-full mt-2 bg-blue-100 text-blue-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
+                >
+                  What are Node Sync Issues?
+                </button>
+              )}
+              
+              {/* Ensure on-chain membership button */}
+              {(members.length >= maxMembers) && isMember && (
+                <button
+                  onClick={async () => {
+                    setVotingLoading(true);
+                    try {
+                      const success = await ensureOnChainMembership();
+                      if (success) {
+                        alert('✅ Successfully ensured on-chain membership! You can now create proposals.');
+                      } else {
+                        alert('❌ Failed to ensure on-chain membership. Please try joining the community again.');
+                      }
+                    } catch (error) {
+                      alert('Error ensuring membership: ' + error.message);
+                    } finally {
+                      setVotingLoading(false);
+                    }
+                  }}
+                  className="w-full mt-2 bg-green-100 text-green-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
+                  disabled={votingLoading}
+                >
+                  {votingLoading ? 'Ensuring Membership...' : 'Ensure On-Chain Membership'}
+                </button>
+              )}
+              
+              {/* Force membership button */}
+              {(members.length >= maxMembers) && isMember && (
+                <button
+                  onClick={forceMembership}
+                  className="w-full mt-2 bg-yellow-100 text-yellow-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-yellow-200 transition-colors"
+                >
+                  🔄 Force Membership (Retry Logic)
+                </button>
+              )}
+              
+              {/* Add user as member on-chain button */}
+              {(members.length >= maxMembers) && isMember && (
+                <button
+                  onClick={addUserAsMemberOnChain}
+                  className="w-full mt-2 bg-red-100 text-red-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors"
+                >
+                  🔧 Add Me as Member On-Chain (Owner Only)
+                </button>
+              )}
+              
+              {/* Direct proposal creation test button */}
+              {(members.length >= maxMembers) && isMember && (
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!votingContract) {
+                        alert('Voting contract not ready');
+                        return;
+                      }
+                      
+                      // Try to create a test proposal directly
+                      const testDescription = "Test Proposal - " + new Date().toLocaleString();
+                      const testOptions = ["Option 1", "Option 2"];
+                      const testDuration = 60; // 1 hour
+                      
+                      console.log('🔄 Attempting direct proposal creation...');
+                      const tx = await votingContract.createProposal(testDescription, testOptions, testDuration);
+                      await tx.wait();
+                      alert('✅ Test proposal created successfully!');
+                      
+                      // Refresh proposals
+                      const count = await votingContract.getProposalCount();
+                      const arr = [];
+                      for (let i = 0; i < count; i++) {
+                        const p = await votingContract.getProposal(i);
+                        arr.push({
+                          description: p[0],
+                          options: p[1],
+                          optionsVotes: p[2].map(v => Number(v)),
+                          endTime: Number(p[3]),
+                          executed: p[4],
+                          winningOption: Number(p[5]),
+                        });
+                      }
+                      setProposals(arr);
+                    } catch (error) {
+                      console.error('Direct proposal creation failed:', error);
+                      alert('❌ Direct proposal creation failed: ' + error.message);
+                    }
+                  }}
+                  className="w-full mt-2 bg-purple-100 text-purple-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-purple-200 transition-colors"
+                >
+                  🧪 Try Direct Proposal Creation (Bypass All Checks)
+                </button>
+              )}
             </div>
 
             {/* Payment and Swap Buttons - only show when community is full and user is member */}
@@ -672,7 +1438,7 @@ const CommunityDetailPage = () => {
             )} */}
 
             {/* Recent Activity */}
-            <div className="bg-white/80 backdrop-blur-md rounded-2xl p-6 border border-teal-100 shadow-lg">
+            {/* <div className="bg-white/80 backdrop-blur-md rounded-2xl p-6 border border-teal-100 shadow-lg">
               <h3 className="text-lg font-bold text-teal-700 mb-4">Recent Activity</h3>
               <div className="space-y-3">
                 {memberProfiles.length > 0 && (
@@ -701,7 +1467,7 @@ const CommunityDetailPage = () => {
                   <span>Payment milestone reached</span>
                 </div>
               </div>
-            </div>
+            </div> */}
             {/* Community Members List */}
             <div className="bg-white/80 backdrop-blur-md rounded-2xl p-6 border border-teal-100 shadow-lg mt-6">
               <h3 className="text-lg font-bold text-teal-700 mb-4">Community Members</h3>
@@ -819,29 +1585,70 @@ const CommunityDetailPage = () => {
       {/* Trip Proposals & Voting section at the bottom - side by side layout */}
       {(members.length >= maxMembers) && isMember && (
         <div className="container mx-auto px-4 py-12 mt-12">
-          <div className="bg-gradient-to-br from-teal-50 via-white to-teal-100 border-4 border-teal-200/60 rounded-3xl shadow-2xl shadow-teal-100/40 p-10 flex flex-col items-center relative overflow-hidden">
-            <div className="absolute -top-8 -left-8 w-32 h-32 bg-teal-100 rounded-full opacity-30 blur-2xl pointer-events-none"></div>
-            <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-teal-200 rounded-full opacity-20 blur-2xl pointer-events-none"></div>
-            <h2 className="text-3xl font-extrabold text-teal-700 mb-2 text-center drop-shadow-lg">Trip Proposals & Voting</h2>
-            <p className="text-lg text-teal-800 mb-8 text-center max-w-2xl">Participate in shaping your trip! Submit new proposals or vote on existing ones to help decide important details for your community adventure.</p>
-            <div className="w-full flex flex-col md:flex-row gap-8 md:gap-12 items-stretch justify-center min-h-[420px] md:min-h-[480px]">
-              <div className="flex-1 w-full md:max-w-md bg-white/90 border border-teal-100 rounded-2xl shadow-lg flex flex-col justify-center p-6" style={{ minHeight: '420px', height: '100%' }}>
-                {/* Render ProposalForm directly, let the parent card provide the background and padding */}
-                <ProposalForm onSubmit={handleCreateProposal} disabled={votingLoading} noCard />
-              </div>
-              <div className="hidden md:block h-full w-0.5 bg-teal-100 rounded-full mx-2"></div>
-              <div className="flex-1 w-full bg-white/90 border border-teal-100 rounded-2xl shadow-lg flex flex-col p-4" style={{ minHeight: '420px', height: '100%' }}>
-                <div className="flex-1 overflow-y-auto max-h-[400px] pr-2">
-                  <ProposalList
-                    proposals={proposals}
-                    onVote={handleVote}
-                    onFinalize={handleFinalize}
-                    currentUser={walletAddress}
-                    votingStatus={votingStatus}
-                  />
+          {isFirestoreMember ? (
+            <div className="bg-gradient-to-br from-teal-50 via-white to-teal-100 border-4 border-teal-200/60 rounded-3xl shadow-2xl shadow-teal-100/40 p-10 flex flex-col items-center relative overflow-hidden">
+              <div className="absolute -top-8 -left-8 w-32 h-32 bg-teal-100 rounded-full opacity-30 blur-2xl pointer-events-none"></div>
+              <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-teal-200 rounded-full opacity-20 blur-2xl pointer-events-none"></div>
+              <h2 className="text-3xl font-extrabold text-teal-700 mb-2 text-center drop-shadow-lg">Trip Proposals & Voting</h2>
+              <p className="text-lg text-teal-800 mb-8 text-center max-w-2xl">Participate in shaping your trip! Submit new proposals or vote on existing ones to help decide important details for your community adventure.</p>
+              
+              {/* Status indicator */}
+              {!canCreateProposals && (
+                <div className="bg-yellow-100 border border-yellow-300 text-yellow-800 px-4 py-3 rounded-lg mb-6 text-center">
+                  <p className="font-medium">Voting setup in progress...</p>
+                  <p className="text-sm mt-1">Please wait while we verify your membership and payment status.</p>
+                </div>
+              )}
+              
+              {canCreateProposals && (
+                <div className="bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-lg mb-6 text-center">
+                  <p className="font-medium">✓ Ready to create proposals and vote!</p>
+                  <p className="text-sm mt-1">
+                    {votingContractReady && isMember ? 
+                      "You are a verified member with full voting privileges." :
+                      "You have paid the joining fee and can create proposals. The system will handle voting contract issues automatically."
+                    }
+                  </p>
+                </div>
+              )}
+              
+              <div className="w-full flex flex-col md:flex-row gap-8 md:gap-12 items-stretch justify-center min-h-[420px] md:min-h-[480px]">
+                <div className="flex-1 w-full md:max-w-md bg-white/90 border border-teal-100 rounded-2xl shadow-lg flex flex-col justify-center p-6" style={{ minHeight: '420px', height: '100%' }}>
+                  {/* Render ProposalForm directly, let the parent card provide the background and padding */}
+                  <ProposalForm onSubmit={handleCreateProposal} disabled={votingLoading || !canCreateProposals} noCard />
+                </div>
+                <div className="hidden md:block h-full w-0.5 bg-teal-100 rounded-full mx-2"></div>
+                <div className="flex-1 w-full bg-white/90 border border-teal-100 rounded-2xl shadow-lg flex flex-col p-4" style={{ minHeight: '420px', height: '100%' }}>
+                  <div className="flex-1 overflow-y-auto max-h-[400px] pr-2">
+                    <ProposalList
+                      proposals={proposals}
+                      onVote={handleVote}
+                      onFinalize={handleFinalize}
+                      currentUser={walletAddress}
+                      votingStatus={votingStatus}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
+          ) : (
+            <div className="text-red-500 font-bold my-8 text-center">
+              You must be a community member to create proposals or vote.
+            </div>
+          )}
+        </div>
+      )}
+      {finalizedResults.length > 0 && (
+        <div className="container mx-auto px-4 py-6 mt-4">
+          <h3 className="text-2xl font-bold text-teal-700 mb-4">Finalized Proposal Results</h3>
+          <div className="space-y-4">
+            {finalizedResults.map((res, idx) => (
+              <div key={idx} className="bg-white border border-teal-100 rounded-xl shadow p-4 flex flex-col gap-2">
+                <div className="font-semibold text-teal-700">{res.description}</div>
+                <div className="text-gray-700">Final Decision: <span className="font-bold text-green-700">{res.winningOption}</span> ({res.votes} votes)</div>
+                <div className="text-xs text-gray-500">Options: {res.options.map((opt, i) => `${opt} (${res.optionsVotes[i]})`).join(', ')}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}

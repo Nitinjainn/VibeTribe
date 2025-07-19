@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract TripVoting {
+contract CommunityVoting {
     address public daoOwner;
     mapping(address => bool) public isMember;
     uint256 public memberCount;
-
+    
+    // Community-specific data
+    string public communityId;
+    mapping(string => Proposal) public proposals;
+    string[] public proposalIds;
+    
     struct Proposal {
+        string id;
         string description;
         string[] options;
         uint256[] votes;
@@ -14,16 +20,17 @@ contract TripVoting {
         bool executed;
         uint256 winningOption;
         mapping(address => bool) voted;
+        bool exists;
     }
 
-    Proposal[] public proposals;
-
-    constructor(address[] memory members) {
+    constructor(string memory _communityId, address[] memory members) {
+        communityId = _communityId;
+        daoOwner = msg.sender;
+        
         for (uint i = 0; i < members.length; i++) {
             isMember[members[i]] = true;
             memberCount++;
         }
-        daoOwner = msg.sender;
     }
 
     modifier onlyMember() {
@@ -31,33 +38,45 @@ contract TripVoting {
         _;
     }
 
-    function createProposal(string memory description, string[] memory options, uint256 durationMinutes) external onlyMember {
+    function createProposal(string memory proposalId, string memory description, string[] memory options, uint256 durationMinutes) external onlyMember {
         require(options.length >= 2, "At least 2 options");
-        Proposal storage newProposal = proposals.push();
+        require(!proposals[proposalId].exists, "Proposal already exists");
+        
+        Proposal storage newProposal = proposals[proposalId];
+        newProposal.id = proposalId;
         newProposal.description = description;
         newProposal.endTime = block.timestamp + durationMinutes * 1 minutes;
+        newProposal.exists = true;
+        
         for (uint i = 0; i < options.length; i++) {
             newProposal.options.push(options[i]);
             newProposal.votes.push(0);
         }
+        
+        proposalIds.push(proposalId);
     }
 
-    function vote(uint256 id, uint256 option) external onlyMember {
-        Proposal storage p = proposals[id];
+    function vote(string memory proposalId, uint256 option) external onlyMember {
+        Proposal storage p = proposals[proposalId];
+        require(p.exists, "Proposal does not exist");
         require(block.timestamp < p.endTime, "Voting ended");
         require(!p.voted[msg.sender], "Already voted");
         require(option < p.options.length, "Invalid option");
+        
         p.voted[msg.sender] = true;
         p.votes[option]++;
     }
 
-    function finalize(uint256 id) external {
-        Proposal storage p = proposals[id];
+    function finalize(string memory proposalId) external {
+        Proposal storage p = proposals[proposalId];
+        require(p.exists, "Proposal does not exist");
         require(block.timestamp >= p.endTime, "Voting still active");
         require(!p.executed, "Already finalized");
+        
         p.executed = true;
         uint256 maxVotes = 0;
         uint256 winner = 0;
+        
         for (uint i = 0; i < p.votes.length; i++) {
             if (p.votes[i] > maxVotes) {
                 maxVotes = p.votes[i];
@@ -67,20 +86,26 @@ contract TripVoting {
         p.winningOption = winner;
     }
 
-    function getProposal(uint256 id) public view returns (
+    function getProposal(string memory proposalId) public view returns (
         string memory desc,
         string[] memory opts,
         uint256[] memory votes,
         uint256 end,
         bool executed,
-        uint256 winningOption
+        uint256 winningOption,
+        bool exists
     ) {
-        Proposal storage p = proposals[id];
-        return (p.description, p.options, p.votes, p.endTime, p.executed, p.winningOption);
+        Proposal storage p = proposals[proposalId];
+        return (p.description, p.options, p.votes, p.endTime, p.executed, p.winningOption, p.exists);
     }
 
     function getProposalCount() public view returns (uint256) {
-        return proposals.length;
+        return proposalIds.length;
+    }
+
+    function getProposalId(uint256 index) public view returns (string memory) {
+        require(index < proposalIds.length, "Index out of bounds");
+        return proposalIds[index];
     }
 
     function addMember(address newMember) external {

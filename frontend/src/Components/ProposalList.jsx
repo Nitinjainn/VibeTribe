@@ -1,11 +1,11 @@
 import React from 'react';
 
 const getTimeLeft = (endTime) => {
-  const now = Math.floor(Date.now() / 1000);
+  const now = Date.now(); // Use milliseconds instead of seconds
   const diff = endTime - now;
   if (diff <= 0) return 'Ended';
-  const m = Math.floor(diff / 60);
-  const s = diff % 60;
+  const m = Math.floor(diff / (60 * 1000)); // Convert milliseconds to minutes
+  const s = Math.floor((diff % (60 * 1000)) / 1000); // Convert remaining milliseconds to seconds
   return `${m}m ${s}s`;
 };
 
@@ -25,7 +25,8 @@ const ProposalList = ({ proposals, onVote, onFinalize, currentUser, votingStatus
       {proposals.map((p, idx) => {
         const voted = votingStatus?.[idx]?.voted;
         const passed = p.passed;
-        const ended = Math.floor(Date.now() / 1000) >= p.endTime;
+        const ended = Date.now() >= p.endTime;
+        // Option vote counts: p.optionsVotes is expected to be an array of counts
         return (
           <div key={idx} className="bg-white/90 border border-teal-100 rounded-2xl shadow-lg p-6 flex flex-col gap-2">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-2">
@@ -37,20 +38,18 @@ const ProposalList = ({ proposals, onVote, onFinalize, currentUser, votingStatus
             </div>
             <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-2">
               <span>Voting ends in: <span className="font-semibold text-teal-700">{getTimeLeft(p.endTime)}</span></span>
-              <span>Yes: <span className="font-bold text-green-700">{p.yesVotes}</span></span>
-              <span>No: <span className="font-bold text-red-700">{p.noVotes}</span></span>
             </div>
             <div className="flex flex-wrap gap-3 mt-2">
-              <button
-                onClick={() => onVote(idx, true)}
-                className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-xl font-semibold shadow-sm transition disabled:opacity-50"
-                disabled={voted || ended}
-              >Yes</button>
-              <button
-                onClick={() => onVote(idx, false)}
-                className="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-xl font-semibold shadow-sm transition disabled:opacity-50"
-                disabled={voted || ended}
-              >No</button>
+              {p.options && p.options.map((opt, optIdx) => (
+                <button
+                  key={optIdx}
+                  onClick={() => onVote(idx, optIdx)}
+                  className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-xl font-semibold shadow-sm transition disabled:opacity-50"
+                  disabled={voted || ended}
+                >
+                  {opt} {p.optionsVotes && typeof p.optionsVotes[optIdx] === 'number' ? `(${p.optionsVotes[optIdx]})` : ''}
+                </button>
+              ))}
               {ended && !p.executed && (
                 <button
                   onClick={() => onFinalize(idx)}
