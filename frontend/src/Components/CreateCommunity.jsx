@@ -18,6 +18,7 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
   const [signer, setSigner] = useState(null);
   const [contract, setContract] = useState(null);
   const [maxMembers, setMaxMembers] = useState(50);
+  const [isCreating, setIsCreating] = useState(false);
 
   // Initialize Ethereum connection
   useEffect(() => {
@@ -105,6 +106,8 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
   //end cost estimation
   const handleCreate = async (e) => {
     e.preventDefault();
+    
+    setIsCreating(true);
   
     try {
       const imageSrc = await fetchImage(location);
@@ -118,7 +121,48 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
       }
   
       const costEstimated = estimateTravelCostAI(location, peopleCount, travelDates, avgDistance);
-  
+
+      // Deploy Escrow contract first (using ethers.js and MetaMask)
+      let escrowAddress = null;
+      try {
+        if (window.ethereum) {
+          console.log('🔄 Deploying escrow contract for community...');
+          
+          // Check if MetaMask is connected
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          if (!accounts || accounts.length === 0) {
+            throw new Error('Please connect your MetaMask wallet first.');
+          }
+          
+          const provider = new ethers.providers.Web3Provider(window.ethereum);
+          const signer = provider.getSigner();
+          
+          // Import ABI and bytecode
+          const escrowArtifact = await import('../abis/Escrow.json');
+          const factory = new ethers.ContractFactory(escrowArtifact.abi, escrowArtifact.bytecode, signer);
+          const userAddress = await signer.getAddress();
+          
+          console.log('Deploying with payee address:', userAddress);
+          console.log('Waiting for MetaMask confirmation...');
+          
+          const escrowContract = await factory.deploy(userAddress); // Pass payee address
+          console.log('Contract deployment transaction sent, waiting for confirmation...');
+          await escrowContract.deployed();
+          escrowAddress = escrowContract.address;
+          console.log('✅ Escrow contract deployed at:', escrowAddress);
+        } else {
+          throw new Error('MetaMask not detected. Please install MetaMask to create communities with escrow functionality.');
+        }
+      } catch (deployError) {
+        console.error('Error deploying Escrow contract:', deployError);
+        if (deployError.code === 4001) {
+          alert('MetaMask transaction was rejected. Please try again and confirm the transaction.');
+        } else {
+          alert('Warning: Escrow contract deployment failed. The community will be created without escrow functionality. Error: ' + deployError.message);
+        }
+      }
+
+      // Create community object with escrow address
       const newCommunity = {
         communityName,
         country,
@@ -133,34 +177,12 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
         joinPaidMembers: {}, // Ensure per-community payment tracking
         fullPaidMembers: {}, // Ensure per-community payment tracking
         memberJoinTimestamps: {}, // (optional, for join time tracking)
+        escrowAddress: escrowAddress, // Add escrow address if deployment was successful
       };
   
       // Store in Firebase
       const docRef = await addDoc(collection(db, 'communities'), newCommunity);
       console.log('Community added to Firestore');
-
-      // Deploy Escrow contract (using ethers.js and MetaMask)
-      try {
-        if (window.ethereum) {
-          const provider = new ethers.providers.Web3Provider(window.ethereum);
-          const signer = provider.getSigner();
-          // Import ABI and bytecode
-          const escrowArtifact = await import('../abis/Escrow.json');
-          const factory = new ethers.ContractFactory(escrowArtifact.abi, escrowArtifact.bytecode, signer);
-          const userAddress = await signer.getAddress();
-          const escrowContract = await factory.deploy(userAddress); // Pass payee address
-          await escrowContract.deployed();
-          const escrowAddress = escrowContract.address;
-          console.log('Escrow contract deployed at:', escrowAddress);
-
-          // Update Firestore with escrowAddress
-          await updateDoc(firestoreDoc(db, 'communities', docRef.id), { escrowAddress });
-          console.log('Firestore updated with escrowAddress');
-        }
-      } catch (deployError) {
-        console.error('Error deploying Escrow contract:', deployError);
-        alert('Error deploying Escrow contract: ' + deployError.message);
-      }
   
       // Store on Blockchain (VibeTribe contract)
       if (contract) {
@@ -186,6 +208,8 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
     } catch (error) {
       console.error('Error creating community:', error);
       alert('Some features may have failed, but the community was created.');
+    } finally {
+      setIsCreating(false);
     }
   };
   
@@ -196,6 +220,15 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
         <h2 className="text-3xl font-extrabold text-gray-800 text-center mb-6 tracking-wide">
           Create Your Community
         </h2>
+        {isCreating && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+              <span className="text-blue-700 font-medium">Creating community and deploying escrow contract...</span>
+            </div>
+            <p className="text-sm text-blue-600 mt-2">Please confirm the MetaMask transaction when prompted.</p>
+          </div>
+        )}
         <form onSubmit={handleCreate} className="space-y-6">
           <label className="block text-gray-700 font-semibold">
             Community Name
@@ -278,8 +311,10 @@ const CreateCommunity = ({ onClose, addCommunity }) => {
           </label>
 
           <div className="flex justify-end gap-4 mt-8">
-            <button type="button" onClick={onClose} className="px-6 py-3 bg-gray-400 rounded-lg">Cancel</button>
-            <button type="submit" className="px-6 py-3 bg-blue-600 text-white rounded-lg">Create Community</button>
+            <button type="button" onClick={onClose} className="px-6 py-3 bg-gray-400 rounded-lg" disabled={isCreating}>Cancel</button>
+            <button type="submit" className="px-6 py-3 bg-blue-600 text-white rounded-lg" disabled={isCreating}>
+              {isCreating ? 'Creating Community...' : 'Create Community'}
+            </button>
           </div>
         </form>
       </div>

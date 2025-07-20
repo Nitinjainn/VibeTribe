@@ -333,21 +333,96 @@ const CommunityDetailPage = () => {
       return;
     }
 
+    // Add cache-busting timestamp
+    console.log('🔄 Escrow payment initiated at:', new Date().toISOString());
+
     setEscrowLoading(true);
     setEscrowError('');
 
     try {
+      // Check network connection first
+      const networkStatus = await checkNetworkConnection();
+      console.log('Network status:', networkStatus);
+      
+      if (!networkStatus.connected) {
+        throw new Error('MetaMask not connected. Please connect your wallet.');
+      }
+      
+      if (!networkStatus.isBscTestnet) {
+        console.log('Not on BSC Testnet, attempting to switch...');
+        try {
+          await switchToBscTestnet();
+          console.log('✅ Switched to BSC Testnet');
+        } catch (switchError) {
+          throw new Error('Please switch to BSC Testnet in MetaMask and try again.');
+        }
+      }
+      
+      if (!networkStatus.hasAccount) {
+        throw new Error('No MetaMask account connected. Please connect your account.');
+      }
+      
       const provider = new ethers.providers.Web3Provider(window.ethereum);
       const signer = provider.getSigner();
-      const escrowAddr = "0x93390878FbD144848D8ef5f5bC1dD5BCa287AEA8";
-      const escrowContract = new ethers.Contract(escrowAddr, escrowArtifact.abi, signer);
+      
+      // Get escrow address from community data
+      let escrowAddr = community?.escrowAddress;
+      
+      if (!escrowAddr) {
+        throw new Error('This community does not have an escrow contract. Please contact the community creator.');
+      }
+      
+      console.log('Using escrow contract address from community:', escrowAddr);
+      
+      // Create contract instance with proper error handling
+      let escrowContract;
+      try {
+        console.log('Creating escrow contract with address:', escrowAddr);
+        console.log('ABI functions available:', escrowArtifact.abi.map(item => item.name || item.type).filter(Boolean));
+        
+        escrowContract = new ethers.Contract(escrowAddr, escrowArtifact.abi, signer);
+        
+        // Test the contract connection
+        console.log('Testing contract connection...');
+        const balance = await escrowContract.getBalance();
+        console.log('Contract balance:', balance.toString());
+        
+        // Verify the deposit function exists
+        if (!escrowContract.deposit) {
+          throw new Error('Deposit function not found in contract ABI');
+        }
+        
+        console.log('✅ Contract initialized successfully at:', escrowAddr);
+      } catch (contractError) {
+        console.error('Contract initialization error:', contractError);
+        throw new Error(`Failed to connect to escrow contract at ${escrowAddr}. Please ensure the contract is deployed on the current network.`);
+      }
 
-      // Pay the joining fee
+      // Pay the joining fee - using ethers v5 syntax
       const joinFee = ethers.utils.parseEther("0.0001");
-      const tx = await escrowContract.payJoinFee({ value: joinFee });
+      console.log('Attempting to call deposit function with fee:', joinFee.toString());
+      
+      // Use ethers v5 syntax for contract calls
+      const tx = await escrowContract.deposit({ value: joinFee });
       await tx.wait();
 
       console.log('✅ Join fee paid successfully');
+
+      // Update payment status in Firestore
+      const communityRef = doc(db, "communities", id);
+      await runTransaction(db, async (transaction) => {
+        const communityDoc = await transaction.get(communityRef);
+        if (!communityDoc.exists()) throw new Error("Community not found");
+        const data = communityDoc.data();
+        const joinPaidMembers = data.joinPaidMembers || {};
+        
+        // Update the user's payment status
+        joinPaidMembers[walletAddress] = 0.0001;
+        
+        transaction.update(communityRef, {
+          joinPaidMembers: joinPaidMembers
+        });
+      });
 
       // Add user to Firestore community
       await addUserToCommunity();
@@ -393,14 +468,29 @@ const CommunityDetailPage = () => {
         console.log('User is not yet a member on-chain, but added to Firestore');
       }
 
-      setHasPaidJoin(true);
       setShowEscrowModal(false);
       alert('✅ Successfully joined the community! You can now participate in proposals and voting.');
 
     } catch (error) {
       console.error('Escrow payment error:', error);
+      
+      // More detailed error handling
       if (error.code === 4001) {
         setEscrowError('You rejected the transaction in MetaMask.');
+      } else if (error.message.includes('payJoinFee')) {
+        setEscrowError('Contract function error: The deposit function is not available. Please check your network connection.');
+      } else if (error.message.includes('Internal JSON-RPC error')) {
+        setEscrowError('Network error: Please check your MetaMask connection and try again.');
+      } else if (error.message.includes('missing trie node')) {
+        setEscrowError('Network sync issue: Please wait a moment and try again.');
+      } else if (error.message.includes('Failed to connect to escrow contract')) {
+        setEscrowError('Contract connection failed. Please ensure you are connected to BSC Testnet and try again.');
+      } else if (error.message.includes('This community does not have an escrow contract')) {
+        setEscrowError('This community was created without escrow functionality. Please contact the community creator to add escrow support.');
+      } else if (error.message.includes('No escrow contract could be initialized')) {
+        setEscrowError('No escrow contract found. The system will attempt to deploy a new one. Please try again.');
+      } else if (error.message.includes('execution reverted')) {
+        setEscrowError('Transaction failed: The contract rejected the transaction. This might be due to insufficient funds or network issues.');
       } else {
         setEscrowError('Payment failed: ' + error.message);
       }
@@ -434,7 +524,6 @@ const CommunityDetailPage = () => {
           members: [...currentMembers, walletAddress],
           peopleCount: currentMembers.length + 1,
           memberJoinTimestamps: { ...memberJoinTimestamps, [walletAddress]: Date.now() },
-          joinPaidMembers: { ...joinPaidMembers, [walletAddress]: 0.0001 },
         });
       });
 
@@ -625,27 +714,15 @@ const CommunityDetailPage = () => {
     }
     setVotingLoading(true);
     try {
-      if (!votingContractReady || !canCreateProposals) {
-        throw new Error('You must be a paid member to create proposals');
-      }
-      if (!votingContract) throw new Error('Voting contract not ready or wallet not connected');
-      
-      // Try to ensure on-chain membership, but don't block if it fails
-      try {
-        const isOnChainMember = await ensureOnChainMembership();
-        if (!isOnChainMember) {
-          console.warn('⚠️ Could not ensure on-chain membership, but proceeding anyway...');
-          // Don't throw error, just warn and continue
-        }
-      } catch (membershipError) {
-        console.warn('⚠️ Membership check failed, but proceeding with proposal creation:', membershipError);
-        // Continue anyway - let the contract decide
+      if (!votingContract) {
+        throw new Error('Voting contract not ready or wallet not connected');
       }
       
       console.log('Creating proposal with:', { description, options, duration });
       
       // Generate unique proposal ID using community ID and timestamp
       const proposalId = `${id}-${Date.now()}`;
+      console.log('📝 Generated proposal ID:', proposalId);
       
       // Store proposal in Firestore first
       const proposalData = {
@@ -676,19 +753,22 @@ const CommunityDetailPage = () => {
         });
       });
       
-      // Try to create on-chain proposal as well (for backup) - use the new contract format with proposalId
+      // ALWAYS try to create on-chain proposal - this will trigger MetaMask
       try {
+        console.log('🔄 Creating on-chain proposal with:', { proposalId, description, options, duration });
         const tx = await votingContract.createProposal(proposalId, description, options, duration);
+        console.log('✅ On-chain proposal transaction sent, waiting for confirmation...');
         await tx.wait();
         console.log('✅ On-chain proposal created successfully');
       } catch (onChainError) {
         console.warn('⚠️ On-chain proposal creation failed, but Firestore proposal was created:', onChainError);
+        // Don't throw error, just warn - Firestore proposal was already created
       }
       
       // Refresh proposals from Firestore
       try {
-        const communityRef = doc(db, "communities", id);
-        const communityDoc = await getDoc(communityRef);
+        const refreshCommunityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(refreshCommunityRef);
         
         if (communityDoc.exists()) {
           const data = communityDoc.data();
@@ -739,6 +819,8 @@ const CommunityDetailPage = () => {
         return;
       }
       
+      console.log('🔄 Attempting to vote for proposal:', proposalId, 'option:', optionIdx);
+      
       const communityRef = doc(db, "communities", id);
       await runTransaction(db, async (transaction) => {
         const communityDoc = await transaction.get(communityRef);
@@ -746,9 +828,15 @@ const CommunityDetailPage = () => {
         const data = communityDoc.data();
         const proposals = data.proposals || [];
         
+        console.log('📋 Available proposals:', proposals.map(p => p.id));
+        console.log('🔍 Looking for proposal ID:', proposalId);
+        
         // Find the proposal
         const proposalIndex = proposals.findIndex(p => p.id === proposalId);
-        if (proposalIndex === -1) throw new Error("Proposal not found");
+        if (proposalIndex === -1) {
+          console.error('❌ Proposal not found. Available proposals:', proposals.map(p => p.id));
+          throw new Error(`Proposal not found: ${proposalId}`);
+        }
         
         const proposal = proposals[proposalIndex];
         
@@ -777,8 +865,8 @@ const CommunityDetailPage = () => {
       
       // Refresh proposals from Firestore
       try {
-        const communityRef = doc(db, "communities", id);
-        const communityDoc = await getDoc(communityRef);
+        const voteRefreshCommunityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(voteRefreshCommunityRef);
         
         if (communityDoc.exists()) {
           const data = communityDoc.data();
@@ -801,6 +889,19 @@ const CommunityDetailPage = () => {
         }
       } catch (error) {
         console.error('Error refreshing proposals:', error);
+      }
+      
+      // Try to vote on-chain as well
+      try {
+        if (votingContract) {
+          console.log('🔄 Voting on-chain for proposal:', proposalId, 'option:', optionIdx);
+          const tx = await votingContract.vote(proposalId, optionIdx);
+          console.log('✅ On-chain vote transaction sent, waiting for confirmation...');
+          await tx.wait();
+          console.log('✅ On-chain vote recorded successfully');
+        }
+      } catch (onChainError) {
+        console.warn('⚠️ On-chain voting failed, but Firestore vote was recorded:', onChainError);
       }
       
       setVotingStatus(prev => ({ ...prev, [proposalId]: { voted: true } }));
@@ -864,8 +965,8 @@ const CommunityDetailPage = () => {
       
       // Refresh proposals from Firestore
       try {
-        const communityRef = doc(db, "communities", id);
-        const communityDoc = await getDoc(communityRef);
+        const finalizeRefreshCommunityRef = doc(db, "communities", id);
+        const communityDoc = await getDoc(finalizeRefreshCommunityRef);
         
         if (communityDoc.exists()) {
           const data = communityDoc.data();
@@ -888,6 +989,19 @@ const CommunityDetailPage = () => {
         }
       } catch (error) {
         console.error('Error refreshing proposals:', error);
+      }
+      
+      // Try to finalize on-chain as well
+      try {
+        if (votingContract) {
+          console.log('🔄 Finalizing proposal on-chain:', proposalId);
+          const tx = await votingContract.finalize(proposalId);
+          console.log('✅ On-chain finalization transaction sent, waiting for confirmation...');
+          await tx.wait();
+          console.log('✅ On-chain proposal finalized successfully');
+        }
+      } catch (onChainError) {
+        console.warn('⚠️ On-chain finalization failed, but Firestore proposal was finalized:', onChainError);
       }
       
       alert('Proposal finalized successfully!');
@@ -1096,6 +1210,48 @@ const CommunityDetailPage = () => {
 
   // Gate on-chain proposal creation and voting by Firestore membership
   const isFirestoreMember = members.map(m => m.toLowerCase()).includes(walletAddress?.toLowerCase());
+
+  // Add escrow functionality to existing community
+  const addEscrowToCommunity = async () => {
+    if (!window.ethereum || !walletAddress) {
+      alert('Please connect your wallet first.');
+      return;
+    }
+
+    // Check if user is the community creator (you can modify this logic)
+    if (community?.createdBy && community.createdBy !== walletAddress) {
+      alert('Only the community creator can add escrow functionality.');
+      return;
+    }
+
+    try {
+      console.log('🔄 Adding escrow functionality to community...');
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+      
+      // Import ABI and bytecode
+      const escrowArtifact = await import('../abis/Escrow.json');
+      const factory = new ethers.ContractFactory(escrowArtifact.abi, escrowArtifact.bytecode, signer);
+      const userAddress = await signer.getAddress();
+      
+      console.log('Deploying escrow contract with payee address:', userAddress);
+      const escrowContract = await factory.deploy(userAddress);
+      await escrowContract.deployed();
+      const escrowAddress = escrowContract.address;
+      console.log('✅ Escrow contract deployed at:', escrowAddress);
+
+      // Update Firestore with escrowAddress
+      const communityRef = doc(db, "communities", id);
+      await updateDoc(communityRef, { escrowAddress });
+      console.log('✅ Community updated with escrow address:', escrowAddress);
+      
+      alert('✅ Escrow functionality added successfully! Users can now join with payments.');
+      
+    } catch (error) {
+      console.error('Error adding escrow functionality:', error);
+      alert('Failed to add escrow functionality: ' + error.message);
+    }
+  };
 
   if (!community) {
     return (
@@ -1361,6 +1517,16 @@ const CommunityDetailPage = () => {
                   className="w-full mt-2 bg-yellow-100 text-yellow-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-yellow-200 transition-colors"
                 >
                   🔄 Force Membership (Retry Logic)
+                </button>
+              )}
+              
+              {/* Add escrow functionality button for community creators */}
+              {!community?.escrowAddress && walletAddress && (
+                <button
+                  onClick={addEscrowToCommunity}
+                  className="w-full mt-2 bg-purple-100 text-purple-700 py-2 px-4 rounded-lg text-sm font-medium hover:bg-purple-200 transition-colors"
+                >
+                  🔧 Add Escrow Functionality (Creator Only)
                 </button>
               )}
               
